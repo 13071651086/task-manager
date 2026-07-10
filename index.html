@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小叽最最最最可爱了！！</title>
+    <title>任务日程管理系统</title>
     <style>
         :root {
             --border-color: #e0e0e0;
@@ -36,11 +36,11 @@
             overflow-y: scroll; 
         }
 
-        /* 💡 开启一键打码时的全局高模糊样式 */
+        /* 开启一键打码时的全局高模糊样式 */
         body.is-masked .copy-val {
             filter: blur(6px) !important;
             user-select: none !important;
-            pointer-events: none !important; /* 打码期间禁用点击复制，防止误操作泄露 */
+            pointer-events: none !important; 
         }
 
         .container {
@@ -430,7 +430,7 @@
     <div class="json-actions">
         <button class="btn-json btn-undo" id="btnUndoAction">↩ 撤回操作</button>
         <button class="btn-json" id="btnConfigCloud">⚙️ 云端凭证配置</button>
-        <button class="btn-json btn-primary" id="btnCloudPush">☁️ 同步到云端</button>
+        <button class="btn-json btn-primary" id="btnCloudPush">☁️ 备份到服务器</button>
         <button class="btn-json btn-purple" id="btnCloudPull">📥 从云端选择下载</button>
     </div>
 </div>
@@ -482,7 +482,7 @@
 <div class="modal-overlay" id="cloudFilesModal">
     <div class="modal modal-cloud-w">
         <h3>请选择要拉取的云端 JSON 备份</h3>
-        <span style="font-size:11px; color:#777; margin-top:4px;">系统已自动在线扫描同目录下的历史备份文件，选择一项即可覆盖当前数据：</span>
+        <span style="font-size:11px; color:#777; margin-top:4px;">选择历史文件后，系统会**自动将其数据覆盖写入核心文件 task_data.json**：</span>
         <div class="file-list-container" id="cloudFileList">
             </div>
         <div class="modal-btns">
@@ -523,37 +523,119 @@
         return d;
     }
 
-    function loadData() {
+    // 💡 页面加载时：先初始化配置，再自动尝试从云端拉取默认核心数据源 task_data.json
+    async function loadData() {
+        if (!localStorage.getItem('GH_CLOUD_CONFIG')) {
+            localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(DEFAULT_CLOUD_CONFIG));
+        }
+
+        // 先尝试加载本地缓存垫底，以防没有网时白屏
         const localData = localStorage.getItem('TASK_SCHEDULER_DATA');
         if (localData) {
             try {
                 const parsed = JSON.parse(localData);
                 tasksMap = parsed.tasksMap || {};
-                if (parsed.lastViewDate) {
-                    currentStartDate = new Date(parsed.lastViewDate);
-                } else {
-                    currentStartDate = getSundayOfThisWeek(new Date());
-                }
-            } catch (e) {
-                initMockData();
-            }
+                currentStartDate = parsed.lastViewDate ? new Date(parsed.lastViewDate) : getSundayOfThisWeek(new Date());
+            } catch (e) { tasksMap = {}; currentStartDate = getSundayOfThisWeek(new Date()); }
         } else {
             currentStartDate = getSundayOfThisWeek(new Date());
-            initMockData();
         }
 
-        if (!localStorage.getItem('GH_CLOUD_CONFIG')) {
-            localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(DEFAULT_CLOUD_CONFIG));
+        // 💡 核心逻辑：开门红，上线自动扫描并拉取服务器的 task_data.json
+        const cfg = getCloudConfig();
+        if (cfg.token && cfg.owner && cfg.repo) {
+            try {
+                const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/task_data.json?ref=${cfg.branch}`;
+                const response = await fetch(url, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json" }
+                });
+                if (response.ok) {
+                    const fileInfo = await response.json();
+                    // 解码 Base64 获取最新云端核心数据
+                    const rawContent = decodeURIComponent(escape(atob(fileInfo.content.replace(/\s/g, ''))));
+                    const parsed = JSON.parse(rawContent);
+                    if (parsed && parsed.tasksMap) {
+                        tasksMap = parsed.tasksMap;
+                        if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
+                        saveDataToLocalOnly(); // 同步回本地缓存
+                        renderTable();
+                        showToast("📡 已自动从云端 task_data.json 同步最新数据");
+                    }
+                }
+            } catch (err) { console.log("上线自动拉取核心数据源失败，使用本地缓存:", err.message); }
         }
+
         updateUndoButtonVisibility();
+        renderTable();
     }
 
-    function saveData() {
-        const dataToSave = {
-            tasksMap: tasksMap,
-            lastViewDate: formatDateKey(currentStartDate)
-        };
+    // 仅保存到浏览器本地
+    function saveDataToLocalOnly() {
+        const dataToSave = { tasksMap: tasksMap, lastViewDate: formatDateKey(currentStartDate) };
         localStorage.setItem('TASK_SCHEDULER_DATA', JSON.stringify(dataToSave));
+    }
+
+    // 💡 改变时自动保存：保存本地的同时，静默在后台触发同步覆盖服务器的 task_data.json
+    function saveData() {
+        saveDataToLocalOnly();
+        autoUploadToDefaultCloud(); // ⚡ 自动更改云端 task_data.json 文件
+    }
+
+    // 💡 后台静默自动更新云端的默认数据源 task_data.json
+    async function autoUploadToDefaultCloud() {
+        const cfg = getCloudConfig();
+        if(!cfg.token || !cfg.owner || !cfg.repo) return;
+
+        const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
+        const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
+
+        try {
+            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/task_data.json?ref=${cfg.branch}`;
+            let currentSha = null;
+            const checkResponse = await fetch(url, {
+                method: "GET",
+                headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json" }
+            });
+
+            if (checkResponse.ok) {
+                const fileInfo = await checkResponse.json();
+                currentSha = fileInfo.sha;
+            }
+
+            const bodyData = { message: `Auto update default data source`, content: base64Content, branch: cfg.branch };
+            if (currentSha) bodyData.sha = currentSha;
+
+            await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/task_data.json`, {
+                method: "PUT",
+                headers: {
+                    "Authorization": `Bearer ${cfg.token}`,
+                    "Accept": "application/vnd.github+json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(bodyData)
+            });
+        } catch (e) { console.error("静默自动保存至云端 task_data.json 失败:", e.message); }
+    }
+
+    // 💡 强行覆盖写入云端的默认数据源 task_data.json (用于导入或拉取历史版本时)
+    async function forceOverwriteDefaultCloud(targetDataStr) {
+        const cfg = getCloudConfig();
+        if(!cfg.token || !cfg.owner || !cfg.repo) return;
+        const base64Content = btoa(unescape(encodeURIComponent(targetDataStr)));
+        try {
+            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/task_data.json?ref=${cfg.branch}`;
+            let currentSha = null;
+            const checkResponse = await fetch(url, { method: "GET", headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json" } });
+            if (checkResponse.ok) { const fileInfo = await checkResponse.json(); currentSha = fileInfo.sha; }
+            const bodyData = { message: `Overwrite default task_data.json with active backup`, content: base64Content, branch: cfg.branch };
+            if (currentSha) bodyData.sha = currentSha;
+            await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/task_data.json`, {
+                method: "PUT",
+                headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json", "Content-Type": "application/json" },
+                body: JSON.stringify(bodyData)
+            });
+        } catch (e) { console.error("覆盖主文件失败:", e.message); }
     }
 
     function saveHistory() {
@@ -564,9 +646,7 @@
 
     function updateUndoButtonVisibility() {
         const undoBtn = document.getElementById('btnUndoAction');
-        if (undoBtn) {
-            undoBtn.style.display = historyStack.length > 0 ? 'block' : 'none';
-        }
+        if (undoBtn) { undoBtn.style.display = historyStack.length > 0 ? 'block' : 'none'; }
     }
 
     function executeUndo() {
@@ -578,15 +658,6 @@
             updateUndoButtonVisibility();
             showToast("已撤销上一步操作");
         }
-    }
-
-    function initMockData() {
-        tasksMap = {}; 
-    }
-
-    function getCloudConfig() {
-        const cfg = localStorage.getItem('GH_CLOUD_CONFIG');
-        return cfg ? JSON.parse(cfg) : DEFAULT_CLOUD_CONFIG;
     }
 
     const weekdayCN = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
@@ -612,9 +683,7 @@
             const dateKey = formatDateKey(date);
             const isToday = dateKey === todayKey;
 
-            if (isToday) {
-                th.className = 'today-column-highlight';
-            }
+            if (isToday) { th.className = 'today-column-highlight'; }
 
             th.innerHTML = `
                 <div class="date-header ${isToday ? 'is-today' : ''}">
@@ -711,23 +780,15 @@
             if (e.button !== 0) return; 
             isDraggingDetected = false; 
             pressTimer = setTimeout(() => {
-                if (!isDraggingDetected) { 
-                    toggleTaskStatus(dateKey, rowId);
-                }
+                if (!isDraggingDetected) { toggleTaskStatus(dateKey, rowId); }
                 pressTimer = null;
             }, 600); 
         });
 
         card.addEventListener('dragstart', (e) => {
-            if (e.target.classList.contains('copy-val')) {
-                e.preventDefault();
-                return;
-            }
+            if (e.target.classList.contains('copy-val')) { e.preventDefault(); return; }
             isDraggingDetected = true;
-            if (pressTimer) {
-                clearTimeout(pressTimer);
-                pressTimer = null;
-            }
+            if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
         });
 
         card.addEventListener('mouseup', () => clearTimeout(pressTimer));
@@ -764,11 +825,7 @@
             document.getElementById('configModal').style.display === 'flex' ||
             document.getElementById('cloudFilesModal').style.display === 'flex') return;
         e.preventDefault();
-        if (e.deltaY > 0 || e.deltaX > 0) {
-            navigateWeek(1); 
-        } else {
-            navigateWeek(-1); 
-        }
+        if (e.deltaY > 0 || e.deltaX > 0) { navigateWeek(1); } else { navigateWeek(-1); }
     }, { passive: false });
 
     function toggleTaskStatus(dateKey, rowId) {
@@ -783,10 +840,7 @@
     let draggedCardInfo = null;
 
     function onDragStart(e) {
-        draggedCardInfo = {
-            sourceDate: this.dataset.date,
-            sourceRow: this.dataset.row
-        };
+        draggedCardInfo = { sourceDate: this.dataset.date, sourceRow: this.dataset.row };
         this.style.opacity = '0.5';
         document.getElementById('trashBin').classList.add('visible');
     }
@@ -815,9 +869,7 @@
         const movingData = tasksMap[draggedCardInfo.sourceDate][draggedCardInfo.sourceRow];
 
         delete tasksMap[draggedCardInfo.sourceDate][draggedCardInfo.sourceRow];
-        if (Object.keys(tasksMap[draggedCardInfo.sourceDate]).length === 0) {
-            delete tasksMap[draggedCardInfo.sourceDate];
-        }
+        if (Object.keys(tasksMap[draggedCardInfo.sourceDate]).length === 0) { delete tasksMap[draggedCardInfo.sourceDate]; }
 
         if (!tasksMap[targetDate]) tasksMap[targetDate] = {};
         tasksMap[targetDate][targetRow] = movingData;
@@ -848,7 +900,6 @@
         showToast("卡片已成功拖拽删除");
     });
 
-    // 💡 一键打码控制逻辑
     document.getElementById('btnToggleMask').onclick = function() {
         const isMasked = document.body.classList.toggle('is-masked');
         if (isMasked) {
@@ -907,10 +958,7 @@
         modal.style.display = 'flex';
     }
 
-    function closeEditModal() {
-        document.getElementById('editModal').style.display = 'none';
-        activeEditConfig = null;
-    }
+    function closeEditModal() { document.getElementById('editModal').style.display = 'none'; activeEditConfig = null; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
     document.getElementById('btnCancel').onclick = closeEditModal;
@@ -952,16 +1000,11 @@
 
     document.getElementById('btnUndoAction').onclick = executeUndo;
     window.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-            e.preventDefault();
-            executeUndo();
-        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); executeUndo(); }
     });
 
     function showToast(msg) {
-        const t = document.getElementById('toast');
-        t.innerText = msg;
-        t.style.opacity = '1';
+        const t = document.getElementById('toast'); t.innerText = msg; t.style.opacity = '1';
         setTimeout(() => t.style.opacity = '0', 2000);
     }
 
@@ -973,10 +1016,7 @@
         const a = document.createElement('a');
         a.href = url;
         a.download = `task_scheduler_backup_${formatDateKey(new Date())}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
         showToast("💾 已成功导出本地 JSON 备份文件");
     };
 
@@ -985,19 +1025,22 @@
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = function(evt) {
+        reader.onload = async function(evt) {
             try {
                 const parsed = JSON.parse(evt.target.result);
                 if (parsed && typeof parsed === 'object') {
                     saveHistory(); 
                     if (parsed.tasksMap) tasksMap = parsed.tasksMap;
                     if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
-                    saveData();
+                    
+                    // 💡 导入本地时：不仅更新当前，并自动覆盖写入云端默认主文件 task_data.json
+                    const dataStr = JSON.stringify(parsed);
+                    localStorage.setItem('TASK_SCHEDULER_DATA', dataStr);
                     renderTable();
-                    showToast('📥 本地 JSON 数据导入成功！');
-                } else {
-                    alert('导入失败：数据结构不满足本系统格式。');
-                }
+                    showToast('导入成功，正在同步覆盖核心数据源...');
+                    await forceOverwriteDefaultCloud(dataStr);
+                    showToast('📥 本地数据已成功载入并覆盖云端 task_data.json');
+                } else { alert('导入失败：数据结构不满足本系统格式。'); }
             } catch (err) { alert('导入失败：文件损坏或不是合法的 JSON。'); }
             document.getElementById('importFile').value = '';
         };
@@ -1021,15 +1064,14 @@
             repo: document.getElementById('c-repo').value.trim(),
             branch: document.getElementById('c-branch').value.trim()
         };
-        if(!config.token || !config.owner || !config.repo) {
-            alert("配置信息不完整，无法保存！");
-            return;
-        }
+        if(!config.token || !config.owner || !config.repo) { alert("配置信息不完整，无法保存！"); return; }
         localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(config));
         closeModal('configModal');
         showToast("⚙️ 云端凭证配置修改成功！");
+        loadData(); // 重新加载一次以拉取核心数据
     };
 
+    // 💡 备份到服务器功能：生成带时间戳的历史独立备份文件
     document.getElementById('btnCloudPush').onclick = async () => {
         const cfg = getCloudConfig();
         if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整注入，请点击凭证配置检查！"); return; }
@@ -1039,28 +1081,13 @@
         const newFileName = `task_backup_${timestamp}.json`; 
 
         const btn = document.getElementById('btnCloudPush');
-        btn.innerText = "⚡ 正在同步...";
+        btn.innerText = "⚡ 正在生成备份...";
         btn.disabled = true;
 
         const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
         const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
 
         try {
-            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}?ref=${cfg.branch}`;
-            let currentSha = null;
-            const checkResponse = await fetch(url, {
-                method: "GET",
-                headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json" }
-            });
-
-            if (checkResponse.ok) {
-                const fileInfo = await checkResponse.json();
-                currentSha = fileInfo.sha;
-            }
-
-            const bodyData = { message: `Backup task data: ${newFileName}`, content: base64Content, branch: cfg.branch };
-            if (currentSha) bodyData.sha = currentSha;
-
             const uploadUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}`;
             const response = await fetch(uploadUrl, {
                 method: "PUT",
@@ -1069,17 +1096,19 @@
                     "Accept": "application/vnd.github+json",
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify(bodyData)
+                body: JSON.stringify({ message: `Create separate history backup: ${newFileName}`, content: base64Content, branch: cfg.branch })
             });
 
             if(response.ok) {
-                showToast(`☁️ 成功在云端同步备份：${newFileName}`);
+                showToast(`☁️ 成功在云端生成独立历史备份：${newFileName}`);
+                // 确保主文件也保持一致
+                autoUploadToDefaultCloud();
             } else {
                 const err = await response.json();
                 alert("云端备份失败：" + (err.message || response.statusText));
             }
         } catch (e) { alert("连接 GitHub API 发生网络异常：" + e.message); }
-        finally { btn.innerText = "☁️ 同步到云端"; btn.disabled = false; }
+        finally { btn.innerText = "☁️ 备份到服务器"; btn.disabled = false; }
     };
 
     document.getElementById('btnCloudPull').onclick = async () => {
@@ -1099,10 +1128,11 @@
 
             if(response.ok) {
                 const files = await response.json();
-                const jsonFiles = files.filter(file => file.name.toLowerCase().endsWith('.json') && file.type === 'file');
+                // 过滤出所有的历史备份 json 文件，排除掉主数据源 task_data.json 自身
+                const jsonFiles = files.filter(file => file.name.toLowerCase().endsWith('.json') && file.type === 'file' && file.name !== 'task_data.json');
                 
                 if(jsonFiles.length === 0) {
-                    alert("云端仓库中暂未检测到任何 .json 备份文件，请先点击‘同步到云端’生成备份！");
+                    alert("云端中未检测到历史时间戳备份文件（除核心源外），可先点击‘备份到服务器’生成历史节点！");
                     return;
                 }
 
@@ -1129,14 +1159,15 @@
                 });
 
                 document.getElementById('cloudFilesModal').style.display = 'flex';
-            } else { alert("扫描云端文件列表失败，请检查配置或 Token 权限。"); }
+            } else { alert("扫描云端备份失败，请检查配置或 Token 权限。"); }
         } catch (e) { alert("扫描发生网络异常：" + e.message); }
         finally { btn.innerText = "📥 从云端选择下载"; btn.disabled = false; }
     };
 
+    // 💡 读取历史备份覆盖核心数据源的逻辑
     document.getElementById('btnConfirmLoadCloud').onclick = async () => {
         if(!selectedCloudFileDownloadUrl) return;
-        if(!confirm("确定要拉取选中的云端数据吗？这将会完整覆盖您当前的本地页面状态！")) return;
+        if(!confirm("确定要拉取该备份吗？系统将会用此数据【全面覆盖】云端核心数据源 task_data.json 并刷新！")) return;
 
         try {
             const response = await fetch(selectedCloudFileDownloadUrl);
@@ -1147,17 +1178,21 @@
                 if (parsed.tasksMap) tasksMap = parsed.tasksMap;
                 if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
 
-                saveData();
+                const dataStr = JSON.stringify(parsed);
+                localStorage.setItem('TASK_SCHEDULER_DATA', dataStr);
                 renderTable();
                 closeModal('cloudFilesModal');
-                showToast("📥 云端数据已导入完成并成功刷新！");
+                
+                showToast("已载入内存，正在覆盖核心数据源...");
+                // ⚡ 核心要求：用选中的文件数据全面覆盖写入服务器上的 task_data.json
+                await forceOverwriteDefaultCloud(dataStr);
+                showToast("📥 数据拉取成功，云端 task_data.json 已更新覆盖！");
             } else { alert("下载具体数据内容时失败。"); }
         } catch(e) { alert("下载云端数据发生异常：" + e.message); }
     };
 
     window.onload = () => {
         loadData();
-        renderTable();
     };
 </script>
 
