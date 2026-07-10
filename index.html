@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小叽最最最可爱了！！！！</title>
+    <title>小叽最最最可爱了</title>
     <style>
         :root {
             --border-color: #e0e0e0;
@@ -40,7 +40,7 @@
         body.is-masked .copy-val {
             filter: blur(6px) !important;
             user-select: none !important;
-            pointer-events: none !important; /* 打码期间禁用点击复制 */
+            pointer-events: none !important; 
         }
 
         .container {
@@ -382,6 +382,10 @@
         .file-item:hover { background: #f5f5f5; }
         .file-item.selected { background: #e8f5e9; font-weight: bold; color: #2e7d32; }
 
+        /* 💡 错误警告特定按钮 */
+        .btn-warning { background: #f57c00; color: white; }
+        .btn-warning:hover { background: #e65100; }
+
         .toast {
             position: fixed;
             bottom: 75px; 
@@ -463,9 +467,9 @@
 <div class="modal-overlay" id="configModal">
     <div class="modal modal-cloud-w">
         <h3>GitHub 云端同步凭证配置</h3>
-        <span style="font-size:11px; color:#777; margin-top:4px;">请保证以下同步库真实有效。Token切勿写死在代码中公开。</span>
-        <label>GitHub Personal Access Token</label>
-        <input type="password" id="c-token" placeholder="ghp_xxxxxxxxxxxx">
+        <span style="font-size:11px; color:#777; margin-top:4px;">请保证以下同步库真实有效。凭证保存在本地浏览器，不会清除。</span>
+        <label>GitHub Personal Access Token (明文可见)</label>
+        <input type="text" id="c-token" placeholder="请输入你的 ghp_ 开头的核心 Token">
         <label>GitHub 用户名 (Owner)</label>
         <input type="text" id="c-owner" placeholder="例如: 13071651086">
         <label>仓库名称 (Repository)</label>
@@ -474,7 +478,7 @@
         <input type="text" id="c-branch" value="main">
         <div class="modal-btns">
             <button class="btn-cancel" onclick="closeModal('configModal')">取消</button>
-            <button class="btn-save" id="btnSaveConfig">保存新配置</button>
+            <button class="btn-save" id="btnSaveConfig">保存并记住凭证</button>
         </div>
     </div>
 </div>
@@ -492,6 +496,20 @@
     </div>
 </div>
 
+<div class="modal-overlay" id="errorRetryModal">
+    <div class="modal modal-cloud-w" style="border-top: 5px solid #d32f2f;">
+        <h3 style="color: #d32f2f; display: flex; align-items: center; gap: 6px;">⚠️ 核心数据源读取失败</h3>
+        <p style="font-size: 13px; color: #333; margin: 10px 0; line-height: 1.6;">
+            未能成功从服务器加载默认数据源 <b>task_data.json</b>。<br>
+            这可能是由于您的 <b>GitHub Token 未配置</b>、已失效，或者网络出现异常导致。
+        </p>
+        <div class="modal-btns">
+            <button class="btn-json" id="btnErrorConfig">⚙️ 检查/修改凭证</button>
+            <button class="btn-save btn-warning" id="btnRetryFetch">🔄 重新读取</button>
+        </div>
+    </div>
+</div>
+
 <div class="toast" id="toast">操作成功</div>
 
 <script>
@@ -501,7 +519,8 @@
     let historyStack = []; 
     let selectedCloudFileDownloadUrl = null;
 
-    const DEFAULT_CLOUD_CONFIG = {
+    // 💡 核心调整：默认配置中 Token 初始化为空，全部依靠用户自行输入并记住
+    const EMPTY_CLOUD_CONFIG = {
         token: "",
         owner: "13071651086",
         repo: "task-manager",
@@ -522,55 +541,74 @@
         return d;
     }
 
-    // 💡 1. 初始化重构：不再读取本地 LocalStorage，直接强制拉取服务器默认数据源文件 task_data.json
+    // 初始化重构：不再读取本地 LocalStorage，直接强制拉取服务器默认数据源文件 task_data.json
     async function loadData() {
         currentStartDate = getSundayOfThisWeek(new Date());
         initMockData();
 
+        // 如果本地完全没有任何凭证记录，则初始化为空结构
         if (!localStorage.getItem('GH_CLOUD_CONFIG')) {
-            localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(DEFAULT_CLOUD_CONFIG));
+            localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(EMPTY_CLOUD_CONFIG));
         }
         updateUndoButtonVisibility();
 
-        // 💡 直接自启动从云端读取默认数据源文件
+        // 直接自启动从云端读取默认数据源文件
         await autoFetchDefaultCloudFile();
     }
 
-    // 💡 2. 刷新或打开网页时，直接读取默认数据源逻辑
+    // 刷新或打开网页时，直接读取默认数据源逻辑
     async function autoFetchDefaultCloudFile() {
         const cfg = getCloudConfig();
-        if(!cfg.token || !cfg.owner || !cfg.repo) return;
+        
+        // 💡 如果用户连最基础的凭证都没填，直接弹出失败重试申请框，引导其输入
+        if(!cfg.token || !cfg.owner || !cfg.repo) {
+            openErrorRetryModal();
+            return;
+        }
         
         try {
-            // 通过 API 获取内容防止 CDN 缓存引起的数据不一致
             const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/task_data.json?ref=${cfg.branch}&t=${new Date().getTime()}`;
             const response = await fetch(url, {
                 method: "GET",
                 headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json" }
             });
+            
             if(response.ok) {
                 const fileInfo = await response.json();
-                // 解决 GitHub API 对中文传输采用 base64 导致乱码的问题
                 const rawContent = decodeURIComponent(escape(atob(fileInfo.content.replace(/\s/g, ''))));
                 const parsed = JSON.parse(rawContent);
                 if (parsed && parsed.tasksMap) {
                     tasksMap = parsed.tasksMap;
                     if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
+                    
+                    closeModal('errorRetryModal'); // 读取成功，关闭错误弹窗
                     renderTable();
-                    showToast("🔄 网页已加载：成功读取云端默认数据源");
+                    showToast("🔄 成功读取云端核心默认数据源");
                 }
             } else {
-                console.log("未检测到云端默认数据源文件，等待后续操作自动创建。");
+                // 如果是仓库里确实还没这个文件(例如首次使用创建)，状态码是 404，属于正常允许情况
+                if (response.status === 404) {
+                    closeModal('errorRetryModal');
+                    renderTable();
+                    showToast("🆕 检测到新库，将在下次操作变动时自动创建 task_data.json");
+                } else {
+                    // 其他如 401 Unauthorized 等错误引发申请弹窗
+                    openErrorRetryModal();
+                }
             }
         } catch(e) { 
             console.log("读取云端 task_data.json 失败:", e.message);
-            showToast("⚠️ 未能连上云端默认数据源");
+            openErrorRetryModal(); // 💡 触发弹窗申请重新读取
         }
     }
 
-    // 💡 3. 有操作变动时，自动后台直接异步更新更改该文件
+    // 💡 错误申请重新读取弹窗控制
+    function openErrorRetryModal() {
+        document.getElementById('errorRetryModal').style.display = 'flex';
+    }
+
+    // 有操作变动时，自动后台直接异步更新更改该文件
     function saveData() {
-        // 保存内存状态并立刻推送到云端默认文件 task_data.json
         autoPushToDefaultCloudFile();
     }
 
@@ -641,7 +679,7 @@
 
     function getCloudConfig() {
         const cfg = localStorage.getItem('GH_CLOUD_CONFIG');
-        return cfg ? JSON.parse(cfg) : DEFAULT_CLOUD_CONFIG;
+        return cfg ? JSON.parse(cfg) : EMPTY_CLOUD_CONFIG;
     }
 
     const weekdayCN = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
@@ -806,7 +844,8 @@
     window.addEventListener('wheel', (e) => {
         if (document.getElementById('editModal').style.display === 'flex' || 
             document.getElementById('configModal').style.display === 'flex' ||
-            document.getElementById('cloudFilesModal').style.display === 'flex') return;
+            document.getElementById('cloudFilesModal').style.display === 'flex' ||
+            document.getElementById('errorRetryModal').style.display === 'flex') return;
         e.preventDefault();
         if (e.deltaY > 0 || e.deltaX > 0) navigateWeek(1); else navigateWeek(-1);
     }, { passive: false });
@@ -999,14 +1038,20 @@
         reader.readAsText(file);
     };
 
-    // --- 云端同步接口配置 ---
-    document.getElementById('btnConfigCloud').onclick = () => {
+    // --- 云端同步接口配置相关 ---
+    function openConfigModal() {
         const cfg = getCloudConfig();
         document.getElementById('c-token').value = cfg.token || '';
         document.getElementById('c-owner').value = cfg.owner || '';
         document.getElementById('c-repo').value = cfg.repo || '';
         document.getElementById('c-branch').value = cfg.branch || 'main';
         document.getElementById('configModal').style.display = 'flex';
+    }
+
+    document.getElementById('btnConfigCloud').onclick = openConfigModal;
+    document.getElementById('btnErrorConfig').onclick = () => {
+        closeModal('errorRetryModal');
+        openConfigModal();
     };
 
     document.getElementById('btnSaveConfig').onclick = () => {
@@ -1017,13 +1062,23 @@
             branch: document.getElementById('c-branch').value.trim()
         };
         if(!config.token || !config.owner || !config.repo) { alert("配置信息不完整！"); return; }
+        
+        // 💡 记住功能：长久存储至 localStorage，不会丢失
         localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(config));
         closeModal('configModal');
-        showToast("⚙️ 云端凭证配置修改成功！");
-        autoFetchDefaultCloudFile();
+        showToast("⚙️ 云端凭证已成功记住并保存！");
+        autoFetchDefaultCloudFile(); // 立即重新读取
     };
 
-    // 💡 📦 备份到服务器：点击生成独立的历史快照文件
+    // 💡 重新读取按钮逻辑触发
+    document.getElementById('btnRetryFetch').onclick = async () => {
+        const btn = document.getElementById('btnRetryFetch');
+        btn.innerText = "⚡ 正在尝试重读..."; btn.disabled = true;
+        await autoFetchDefaultCloudFile();
+        btn.innerText = "🔄 重新读取"; btn.disabled = false;
+    };
+
+    // 📦 备份到服务器：点击生成独立的历史快照文件
     document.getElementById('btnCloudPush').onclick = async () => {
         const cfg = getCloudConfig();
         if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整注入，请先配置！"); return; }
@@ -1060,7 +1115,7 @@
         finally { btn.innerText = "📦 备份到服务器"; btn.disabled = false; }
     };
 
-    // 💡 4. 从云端选择下载逻辑：排除默认数据源文件 task_data.json
+    // 从云端选择下载逻辑：排除默认数据源文件 task_data.json
     document.getElementById('btnCloudPull').onclick = async () => {
         const cfg = getCloudConfig();
         if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整配置！"); return; }
@@ -1078,7 +1133,6 @@
             if(response.ok) {
                 const files = await response.json();
                 
-                // 💡 核心过滤：文件后缀为 .json ，且文件名绝对不等于 "task_data.json" (排除默认源)
                 const jsonFiles = files.filter(file => 
                     file.name.toLowerCase().endsWith('.json') && 
                     file.type === 'file' && 
@@ -1121,7 +1175,6 @@
         if(!confirm("确定载入此历史备份吗？这会覆盖当前页面，并自动重写保存到云端 task_data.json 默认数据源中！")) return;
 
         try {
-            // 为下载链接追加时间戳防止浏览器强缓存旧数据
             const response = await fetch(selectedCloudFileDownloadUrl + (selectedCloudFileDownloadUrl.includes('?') ? '&' : '?') + 't=' + new Date().getTime());
             if(response.ok) {
                 const parsed = await response.json();
@@ -1133,7 +1186,6 @@
                 renderTable();
                 closeModal('cloudFilesModal');
 
-                // 强制触发覆写到云端 task_data.json
                 await autoPushToDefaultCloudFile(); 
 
                 showToast("📥 历史快照载入成功，已重写为核心默认数据源文件！");
