@@ -3,23 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>任务日程管理系统</title>
+    <title>任务日程管理系统 - 云端版</title>
     <style>
         :root {
             --border-color: #e0e0e0;
-            
-            /* 已完成：绿色系 */
-            --bg-completed: #e8f5e9;
+            --bg-completed: #f1f9f3;
             --text-completed: #2e7d32;
-            
-            /* 未完成：浅灰色系 */
-            --bg-incomplete: #f5f5f5;
-            --text-incomplete: #757575;
-            
+            --bg-incomplete: #edf4fc;
+            --text-incomplete: #1976d2;
             --bg-empty: #ffffff;
-            
-            /* 当前日期高亮边框颜色 */
-            --today-border-color: #2e7d32; 
         }
 
         * {
@@ -33,7 +25,7 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background-color: #f5f5f5;
             padding: 20px;
-            overflow-y: scroll; /* 始终强制显示竖向滚动条，防止页面因宽度变化抖动 */
+            overflow-y: scroll;
         }
 
         .container {
@@ -42,7 +34,7 @@
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             overflow-x: auto;
-            margin-bottom: 80px; /* 为底部固定不动的状态栏预留出足够的安全高度 */
+            margin-bottom: 70px;
         }
 
         table {
@@ -80,7 +72,7 @@
         }
 
         .date-header.is-today {
-            color: var(--today-border-color);
+            color: #2e7d32;
             font-weight: bold;
         }
 
@@ -92,18 +84,6 @@
         .date-header .week-str {
             font-size: 13px;
             color: #666;
-        }
-
-        /* 当前日期列的表头和单元格高亮边框样式 */
-        th.today-column-highlight {
-            box-shadow: inset 2px 2px 0 var(--today-border-color), inset -2px 0 0 var(--today-border-color);
-            background-color: #f1f8f5; 
-        }
-        td.today-column-highlight {
-            box-shadow: inset 2px 0 0 var(--today-border-color), inset -2px 0 0 var(--today-border-color);
-        }
-        tr:last-child td.today-column-highlight {
-            box-shadow: inset 2px 0 0 var(--today-border-color), inset -2px -2px 0 var(--today-border-color);
         }
 
         .nav-btn {
@@ -195,18 +175,8 @@
             margin-bottom: 2px;
             color: #444;
         }
-        
-        .copy-val {
-            cursor: pointer;       
-            user-select: text;     
-            transition: color 0.1s;
-        }
-        .copy-val:hover {
-            color: #1976d2; 
-            text-decoration: underline;
-        }
 
-        /* 底部状态和控制栏 */
+        /* 底部操作控制栏 */
         .footer-legend {
             position: fixed;
             bottom: 0;
@@ -216,7 +186,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 15px 30px;
+            padding: 12px 20px;
             font-size: 13px;
             z-index: 998;
             box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
@@ -229,14 +199,12 @@
         .legend-item { display: flex; align-items: center; gap: 6px; }
         .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 
-        /* 右下角操作按钮区域 */
-        .json-actions {
+        .action-btns {
             display: flex;
-            gap: 10px;
-            align-items: center;
+            gap: 8px;
         }
-        .btn-json {
-            padding: 5px 12px;
+        .btn-action {
+            padding: 6px 12px;
             font-size: 12px;
             border: 1px solid #ccc;
             background: #fff;
@@ -244,111 +212,19 @@
             cursor: pointer;
             transition: all 0.2s;
             color: #444;
+            font-weight: 500;
         }
-        .btn-json:hover {
+        .btn-action:hover {
             background: #f0f0f0;
             border-color: #999;
             color: #000;
         }
+        .btn-primary { background: #e3f2fd; border-color: #90caf9; color: #0d47a1; }
+        .btn-primary:hover { background: #bbdefb; }
+        .btn-purple { background: #f3e5f5; border-color: #ce93d8; color: #4a148c; }
+        .btn-purple:hover { background: #e1bee7; }
 
-        /* 云端专属高亮按钮 */
-        .btn-cloud-push {
-            background: #e3f2fd;
-            border-color: #90caf9;
-            color: #0d47a1;
-            font-weight: bold;
-        }
-        .btn-cloud-push:hover {
-            background: #bbdefb;
-            border-color: #42a5f5;
-        }
-        .btn-cloud-pull {
-            background: #f3e5f5;
-            border-color: #ce93d8;
-            color: #4a148c;
-            font-weight: bold;
-        }
-        .btn-cloud-pull:hover {
-            background: #e1bee7;
-            border-color: #ab47bc;
-        }
-        
-        .btn-undo {
-            background: #fff3e0;
-            border-color: #ffe0b2;
-            color: #e65100;
-            font-weight: bold;
-            display: none; 
-        }
-        .btn-undo:hover {
-            background: #ffe0b2;
-            border-color: #b57d22;
-            color: #e65100;
-        }
-
-        #importFile {
-            display: none;
-        }
-
-        /* 右下角动态垃圾桶样式 —— 2倍超大目标 */
-        .trash-bin {
-            position: fixed;
-            right: 30px;
-            bottom: 75px; 
-            width: 120px; 
-            height: 120px; 
-            background: #fafafa;
-            border: 2.5px dashed #aaa;
-            border-radius: 50%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 999;
-            box-shadow: 0 6px 16px rgba(0,0,0,0.15);
-            cursor: pointer;
-            opacity: 0;
-            transform: translateY(20px) scale(0.8);
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            pointer-events: none; 
-        }
-        
-        .trash-bin.visible {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            pointer-events: auto;
-        }
-
-        .trash-bin.drag-over {
-            background: #ffebee;
-            border-color: #ef5350;
-            transform: scale(1.1);
-        }
-
-        .trash-icon {
-            font-size: 42px; 
-            transition: transform 0.2s;
-        }
-        .trash-bin.drag-over .trash-icon {
-            transform: rotate(15deg) scale(1.1);
-            animation: shake 0.3s infinite alternate;
-        }
-        .trash-text {
-            font-size: 13px; 
-            color: #666;
-            margin-top: 4px;
-        }
-        .trash-bin.drag-over .trash-text {
-            color: #d32f2f;
-            font-weight: bold;
-        }
-
-        @keyframes shake {
-            0% { transform: rotate(-10deg); }
-            100% { transform: rotate(10deg); }
-        }
-
-        /* 模态弹窗样式 */
+        /* 模态弹窗通用样式 */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -363,22 +239,18 @@
             background: white;
             padding: 20px;
             border-radius: 6px;
-            width: 620px; 
             box-shadow: 0 4px 15px rgba(0,0,0,0.15);
             display: flex;
             flex-direction: column;
         }
         .modal h3 { margin-bottom: 12px; font-size: 16px; }
         
-        .modal-body {
-            display: flex;
-            gap: 20px;
-        }
-        .modal-left {
-            flex: 1;
-        }
+        /* 编辑面板双栏 */
+        .modal-edit-w { width: 580px; }
+        .modal-body { display: flex; gap: 20px; }
+        .modal-left { flex: 1; }
         .modal-right {
-            width: 240px;
+            width: 220px;
             border-left: 1px solid #eee;
             padding-left: 15px;
             display: flex;
@@ -386,7 +258,7 @@
         }
 
         .modal label { display: block; font-size: 12px; color: #666; margin-top: 8px; }
-        .modal textarea, .modal input {
+        .modal textarea, .modal input, .modal select {
             width: 100%; padding: 6px; margin-top: 4px;
             border: 1px solid #ccc; border-radius: 4px; font-size: 12px;
         }
@@ -406,9 +278,32 @@
         .btn-del { background: #d32f2f; color: white; margin-right: auto; }
         .btn-cancel { background: #eee; }
 
+        /* 云端选择下载专用列表样式 */
+        .modal-cloud-w { width: 450px; }
+        .file-list-container {
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .file-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            background: #fff;
+            transition: background 0.2s;
+        }
+        .file-item:last-child { border-bottom: none; }
+        .file-item:hover { background: #f5f5f5; }
+        .file-item.selected { background: #e3f2fd; font-weight: bold; color: #1976d2; }
+
         .toast {
             position: fixed;
-            bottom: 60px; 
+            bottom: 65px;
             right: 20px;
             background: #333;
             color: white;
@@ -436,49 +331,72 @@
     </table>
 </div>
 
-<div class="trash-bin" id="trashBin">
-    <span class="trash-icon">🗑️</span>
-    <span class="trash-text">拖入删除</span>
-</div>
-
 <div class="footer-legend">
     <div class="legend-left">
         <div class="legend-item"><span class="legend-dot" style="background:#2e7d32"></span>已完成</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#757575"></span>未完成</div>
-        <div class="legend-item" style="color: #888; margin-left: 20px;">提示：点击特定内容直接复制 | 按住卡片稳定不动 0.6 秒切换状态 | 移动鼠标可直接拖拽（互不干扰） | 双击空白新建/双击卡片编辑</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#1976d2"></span>未完成</div>
+        <div class="legend-item" style="color: #888; margin-left: 20px;">提示：按住卡片稳定不动 0.6 秒切换状态 | 移动鼠标直接拖拽 | 双击空白新建/双击卡片编辑 | Ctrl+Z 撤销</div>
     </div>
-    
-    <div class="json-actions">
-        <button class="btn-json btn-undo" id="btnUndoAction">↩ 撤回操作</button>
-        <button class="btn-json btn-cloud-push" id="btnCloudPush">☁️ 同步到云端</button>
-        <button class="btn-json btn-cloud-pull" id="btnCloudPull">📥 从云端下载</button>
-        <button class="btn-json" id="btnExportJson">导出 JSON</button>
-        <button class="btn-json" id="btnImportJson">导入 JSON</button>
-        <input type="file" id="importFile" accept=".json">
+    <div class="action-btns">
+        <button class="btn-action" id="btnConfigCloud">⚙️ 云端凭证配置</button>
+        <button class="btn-action btn-primary" id="btnCloudPush">☁️ 同步到云端</button>
+        <button class="btn-action btn-purple" id="btnCloudPull">📥 从云端选择下载</button>
     </div>
 </div>
 
 <div class="modal-overlay" id="editModal">
-    <div class="modal">
+    <div class="modal modal-edit-w">
         <h3>编辑任务资料</h3>
         <div class="modal-body">
             <div class="modal-left">
+                <label>QQ</label><input type="text" id="m-qq">
                 <label>账号</label><input type="text" id="m-account">
                 <label>密码</label><input type="text" id="m-pwd">
                 <label>区服</label><input type="text" id="m-server">
-                <label>雷点/许愿</label><textarea id="m-wish" rows="2"></textarea>
-                <label>小叽备注</label><textarea id="m-note" rows="2"></textarea>
+                <label>要求</label><textarea id="m-req" rows="3"></textarea>
             </div>
             <div class="modal-right">
                 <label style="font-weight: bold; color: #1976d2;">💡 智能识别文本框</label>
                 <span style="font-size: 11px; color:#999; margin-top:4px;">在这里粘贴整段文字，系统将自动识别拆分：</span>
-                <textarea id="m-intel" class="intel-input" placeholder="例如：账号：1160460765@qq.com 密码：gdfhsdh 区服：长安城 雷点：不要分解装备 备注：需要截图..."></textarea>
+                <textarea id="m-intel" class="intel-input" placeholder="例如：QQ:32434235 账号：423346464345 密码：gdfhsdh..."></textarea>
             </div>
         </div>
         <div class="modal-btns">
             <button class="btn-del" id="btnDel">删除任务</button>
             <button class="btn-cancel" id="btnCancel">取消</button>
             <button class="btn-save" id="btnSave">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="configModal">
+    <div class="modal modal-cloud-w">
+        <h3>GitHub 云端同步凭证配置</h3>
+        <span style="font-size:11px; color:#777; margin-top:4px;">数据将通过 API 直接传输至 GitHub，凭证仅保存在您本地浏览器中。</span>
+        <label>GitHub Personal Access Token (classic)</label>
+        <input type="password" id="c-token" placeholder="ghp_xxxxxxxxxxxx">
+        <label>GitHub 用户名 (Owner)</label>
+        <input type="text" id="c-owner" placeholder="例如: 13071651086">
+        <label>仓库名称 (Repository)</label>
+        <input type="text" id="c-repo" placeholder="例如: task-scheduler">
+        <label>分支名称 (Branch)</label>
+        <input type="text" id="c-branch" value="main">
+        <div class="modal-btns">
+            <button class="btn-cancel" onclick="closeModal('configModal')">取消</button>
+            <button class="btn-save" id="btnSaveConfig">保存配置</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="cloudFilesModal">
+    <div class="modal modal-cloud-w">
+        <h3>请选择要下载载入的云端 JSON 备份</h3>
+        <span style="font-size:11px; color:#777; margin-top:4px;">系统已自动扫描同目录下的历史备份文件，选择一项即可覆盖当前数据：</span>
+        <div class="file-list-container" id="cloudFileList">
+            </div>
+        <div class="modal-btns">
+            <button class="btn-cancel" onclick="closeModal('cloudFilesModal')">取消</button>
+            <button class="btn-save" id="btnConfirmLoadCloud" disabled>确认下载并覆盖</button>
         </div>
     </div>
 </div>
@@ -490,11 +408,8 @@
     let currentStartDate = new Date(); 
     let tasksMap = {};
     let historyStack = []; 
-
-    // --- 核心配置：集成你提供的 GitHub Gist 凭证 ---
-    const GITHUB_TOKEN = "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";
-    const GIST_ID = "8abf662c24af5376a63fbd9aef128e96";
-    const GIST_FILE_NAME = "task_scheduler_data.json";
+    let selectedCloudFileSha = null;
+    let selectedCloudFileDownloadUrl = null;
 
     function formatDateKey(date) {
         const y = date.getFullYear();
@@ -510,6 +425,7 @@
         return d;
     }
 
+    // 从本地缓存加载配置及核心任务数据
     function loadData() {
         const localData = localStorage.getItem('TASK_SCHEDULER_DATA');
         if (localData) {
@@ -528,7 +444,6 @@
             currentStartDate = getSundayOfThisWeek(new Date());
             initMockData();
         }
-        updateUndoButtonVisibility();
     }
 
     function saveData() {
@@ -542,31 +457,16 @@
     function saveHistory() {
         historyStack.push(JSON.stringify(tasksMap));
         if (historyStack.length > 50) historyStack.shift();
-        updateUndoButtonVisibility();
-    }
-
-    function updateUndoButtonVisibility() {
-        const undoBtn = document.getElementById('btnUndoAction');
-        if (historyStack.length > 0) {
-            undoBtn.style.display = 'block';
-        } else {
-            undoBtn.style.display = 'none';
-        }
-    }
-
-    function executeUndo() {
-        if (historyStack.length > 0) {
-            const previousState = historyStack.pop();
-            tasksMap = JSON.parse(previousState);
-            renderTable();
-            saveData();
-            updateUndoButtonVisibility();
-            showToast("已撤销上一步操作");
-        }
     }
 
     function initMockData() {
-        tasksMap = {}; 
+        tasksMap = {};
+    }
+
+    // --- GitHub 账号配置存取辅助逻辑 ---
+    function getCloudConfig() {
+        const cfg = localStorage.getItem('GH_CLOUD_CONFIG');
+        return cfg ? JSON.parse(cfg) : null;
     }
 
     const weekdayCN = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
@@ -591,10 +491,6 @@
             const th = document.createElement('th');
             const dateKey = formatDateKey(date);
             const isToday = dateKey === todayKey;
-
-            if (isToday) {
-                th.className = 'today-column-highlight';
-            }
 
             th.innerHTML = `
                 <div class="date-header ${isToday ? 'is-today' : ''}">
@@ -631,10 +527,8 @@
 
             weekDates.forEach(date => {
                 const dateKey = formatDateKey(date);
-                const isToday = dateKey === todayKey;
                 const td = document.createElement('td');
-                
-                td.className = 'task-cell' + (isToday ? ' today-column-highlight' : '');
+                td.className = 'task-cell';
                 td.dataset.date = dateKey;
                 td.dataset.row = rowId;
 
@@ -668,11 +562,11 @@
 
         card.innerHTML = `
             <div class="status-badge">${statusText}</div>
-            <div class="task-field">账号: <span class="copy-val" onclick="copyText(event, '${data.account || ''}', '账号')">${data.account || ''}</span></div>
-            <div class="task-field">密码: <span class="copy-val" onclick="copyText(event, '${data.pwd || ''}', '密码')">${data.pwd || ''}</span></div>
-            <div class="task-field">区服: <span class="copy-val" onclick="copyText(event, '${data.server || ''}', '区服')">${data.server || ''}</span></div>
-            <div class="task-field">雷点/许愿: <span class="copy-val" onclick="copyText(event, '${data.wish || ''}', '雷点/许愿')">${data.wish || ''}</span></div>
-            <div class="task-field">小叽备注: <span class="copy-val" onclick="copyText(event, '${data.note || ''}', '小叽备注')">${data.note || ''}</span></div>
+            <div class="task-field">QQ:${data.qq || ''}</div>
+            <div class="task-field">账号：${data.account || ''}</div>
+            <div class="task-field">密码：${data.pwd || ''}</div>
+            <div class="task-field">区服：${data.server || ''}</div>
+            <div class="task-field">要求：${data.req || ''}</div>
         `;
 
         card.addEventListener('dragstart', onDragStart);
@@ -687,9 +581,8 @@
         let isDraggingDetected = false;
 
         card.addEventListener('mousedown', (e) => {
-            if (e.target.classList.contains('copy-val')) return;
-            if (e.button !== 0) return; 
-            isDraggingDetected = false; 
+            if(e.button !== 0) return; 
+            isDraggingDetected = false;
             pressTimer = setTimeout(() => {
                 if (!isDraggingDetected) { 
                     toggleTaskStatus(dateKey, rowId);
@@ -698,11 +591,7 @@
             }, 600); 
         });
 
-        card.addEventListener('dragstart', (e) => {
-            if (e.target.classList.contains('copy-val')) {
-                e.preventDefault();
-                return;
-            }
+        card.addEventListener('dragstart', () => {
             isDraggingDetected = true;
             if (pressTimer) {
                 clearTimeout(pressTimer);
@@ -716,23 +605,6 @@
         return card;
     }
 
-    function copyText(event, text, type) {
-        event.stopPropagation(); 
-        if (!text) return;
-        
-        navigator.clipboard.writeText(text).then(() => {
-            showToast(`成功复制${type}：${text}`);
-        }).catch(err => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            showToast(`成功复制${type}：${text}`);
-        });
-    }
-
     function navigateWeek(days) {
         currentStartDate.setDate(currentStartDate.getDate() + days);
         renderTable();
@@ -740,7 +612,7 @@
     }
 
     window.addEventListener('wheel', (e) => {
-        if (document.getElementById('editModal').style.display === 'flex') return;
+        if (document.querySelector('.modal-overlay[style*="flex"]')) return;
         e.preventDefault();
         if (e.deltaY > 0 || e.deltaX > 0) {
             navigateWeek(1); 
@@ -766,24 +638,16 @@
             sourceRow: this.dataset.row
         };
         this.style.opacity = '0.5';
-        document.getElementById('trashBin').classList.add('visible');
     }
 
     function onDragEnd() {
         this.style.opacity = '1';
         document.querySelectorAll('.task-cell').forEach(c => c.classList.remove('drag-over'));
-        const trash = document.getElementById('trashBin');
-        trash.classList.remove('visible', 'drag-over');
     }
 
-    function onDragOver(e) {
-        e.preventDefault();
-        this.classList.add('drag-over');
-    }
-
-    function onDragLeave() {
-        this.classList.remove('drag-over');
-    }
+    function onDragOver(e) { e.preventDefault(); this.classList.add('drag-over'); }
+    document.addEventListener('dragleave', (e) => { if(e.target.classList.contains('task-cell')) e.target.classList.remove('drag-over')});
+    function onDragLeave() { this.classList.remove('drag-over'); }
 
     function onDrop(e) {
         e.preventDefault();
@@ -812,56 +676,22 @@
         saveData();
     }
 
-    const trashBin = document.getElementById('trashBin');
-    
-    trashBin.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        this.classList.add('drag-over'); 
-    });
-
-    trashBin.addEventListener('dragleave', function() {
-        this.classList.remove('drag-over');
-    });
-
-    trashBin.addEventListener('drop', function(e) {
-        e.preventDefault();
-        this.classList.remove('drag-over');
-        
-        if (!draggedCardInfo) return;
-        
-        saveHistory();
-
-        const { sourceDate, sourceRow } = draggedCardInfo;
-        if (tasksMap[sourceDate] && tasksMap[sourceDate][sourceRow]) {
-            delete tasksMap[sourceDate][sourceRow];
-            if (Object.keys(tasksMap[sourceDate]).length === 0) {
-                delete tasksMap[sourceDate];
-            }
-        }
-
-        draggedCardInfo = null;
-        renderTable();
-        saveData();
-        showToast("卡片已成功拖拽删除");
-    });
-
-
     const intelInput = document.getElementById('m-intel');
     intelInput.addEventListener('input', function() {
         const text = this.value;
         if (!text.trim()) return;
 
-        const accountMatch = text.match(/(?:账号|帳號|帐号|Account|acc)[:：\s]*(\S+)/i);
-        const pwdMatch = text.match(/(?:密码|密碼|pwd|Password)[:：\s]*(\S+)/i);
+        const qqMatch = text.match(/(?:QQ|qq)[:：\s]*([a-zA-Z0-9_\-]+)/);
+        const accountMatch = text.match(/(?:账号|帳號|帐号|Account|acc)[:：\s]*([a-zA-Z0-9_\-]+)/i);
+        const pwdMatch = text.match(/(?:密码|密碼|pwd|Password)[:：\s]*([a-zA-Z0-9_\-]+)/i);
         const serverMatch = text.match(/(?:区服|服务器|區服|服)[:：\s]*([^\s\n，,、]+)/);
-        const wishMatch = text.match(/(?:雷点|许愿)[^:：]*[:：\s]*([^\n]+)/);
-        const noteMatch = text.match(/(?:小叽备注|备注|小叽|備註)[^:：]*[:：\s]*([^\n]+)/);
+        const reqMatch = text.match(/(?:要求|备注|備註|内容)[:：\s]*([^\n]+)/);
 
-        if(accountMatch) document.getElementById('m-account').value = accountMatch[1].trim();
-        if(pwdMatch) document.getElementById('m-pwd').value = pwdMatch[1].trim();
-        if(serverMatch) document.getElementById('m-server').value = serverMatch[1].trim();
-        if(wishMatch) document.getElementById('m-wish').value = wishMatch[1].trim();
-        if(noteMatch) document.getElementById('m-note').value = noteMatch[1].trim();
+        if(qqMatch) document.getElementById('m-qq').value = qqMatch[1];
+        if(accountMatch) document.getElementById('m-account').value = accountMatch[1];
+        if(pwdMatch) document.getElementById('m-pwd').value = pwdMatch[1];
+        if(serverMatch) document.getElementById('m-server').value = serverMatch[1];
+        if(reqMatch) document.getElementById('m-req').value = reqMatch[1];
     });
 
     let activeEditConfig = null;
@@ -870,57 +700,48 @@
         activeEditConfig = { dateKey, rowId, isCreate };
         const modal = document.getElementById('editModal');
         const btnDel = document.getElementById('btnDel');
-        
         document.getElementById('m-intel').value = '';
 
         if (isCreate) {
             btnDel.style.display = 'none';
+            document.getElementById('m-qq').value = '';
             document.getElementById('m-account').value = '';
             document.getElementById('m-pwd').value = '';
             document.getElementById('m-server').value = '';
-            document.getElementById('m-wish').value = '';
-            document.getElementById('m-note').value = '';
+            document.getElementById('m-req').value = '';
         } else {
             btnDel.style.display = 'block';
             const data = tasksMap[dateKey][rowId];
+            document.getElementById('m-qq').value = data.qq || '';
             document.getElementById('m-account').value = data.account || '';
             document.getElementById('m-pwd').value = data.pwd || '';
             document.getElementById('m-server').value = data.server || '';
-            document.getElementById('m-wish').value = data.wish || '';
-            document.getElementById('m-note').value = data.note || '';
+            document.getElementById('m-req').value = data.req || '';
         }
         modal.style.display = 'flex';
     }
 
-    function closeEditModal() {
-        document.getElementById('editModal').style.display = 'none';
-        activeEditConfig = null;
+    function closeModal(id) {
+        document.getElementById(id).style.display = 'none';
     }
-
-    document.getElementById('btnCancel').onclick = closeEditModal;
+    document.getElementById('btnCancel').onclick = () => closeModal('editModal');
 
     document.getElementById('btnSave').onclick = () => {
         if (!activeEditConfig) return;
         saveHistory();
         const { dateKey, rowId, isCreate } = activeEditConfig;
-
         if (!tasksMap[dateKey]) tasksMap[dateKey] = {};
-        
-        let status = 'incomplete'; 
-        if (!isCreate && tasksMap[dateKey][rowId]) {
-            status = tasksMap[dateKey][rowId].status;
-        }
+        let status = isCreate ? 'incomplete' : (tasksMap[dateKey][rowId] ? tasksMap[dateKey][rowId].status : 'incomplete');
 
         tasksMap[dateKey][rowId] = {
             status: status,
+            qq: document.getElementById('m-qq').value,
             account: document.getElementById('m-account').value,
             pwd: document.getElementById('m-pwd').value,
             server: document.getElementById('m-server').value,
-            wish: document.getElementById('m-wish').value,
-            note: document.getElementById('m-note').value
+            req: document.getElementById('m-req').value
         };
-
-        closeEditModal();
+        closeModal('editModal');
         renderTable();
         saveData();
     };
@@ -929,23 +750,24 @@
         if (!activeEditConfig) return;
         saveHistory();
         const { dateKey, rowId } = activeEditConfig;
-
         if (tasksMap[dateKey] && tasksMap[dateKey][rowId]) {
             delete tasksMap[dateKey][rowId];
             if (Object.keys(tasksMap[dateKey]).length === 0) delete tasksMap[dateKey];
         }
-
-        closeEditModal();
+        closeModal('editModal');
         renderTable();
         saveData();
     };
 
-    document.getElementById('btnUndoAction').onclick = executeUndo;
-
     window.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-            e.preventDefault();
-            executeUndo();
+            if (historyStack.length > 0) {
+                e.preventDefault();
+                tasksMap = JSON.parse(historyStack.pop());
+                renderTable();
+                saveData();
+                showToast("已撤销上一步操作");
+            }
         }
     });
 
@@ -956,140 +778,174 @@
         setTimeout(() => t.style.opacity = '0', 2000);
     }
 
-    // --- 核心改动：同步至 GitHub Gist 云端系统 ---
+    // --- 💡 核心功能：处理云端同步配置 ---
+    document.getElementById('btnConfigCloud').onclick = () => {
+        const cfg = getCloudConfig();
+        if(cfg) {
+            document.getElementById('c-token').value = cfg.token || '';
+            document.getElementById('c-owner').value = cfg.owner || '';
+            document.getElementById('c-repo').value = cfg.repo || '';
+            document.getElementById('c-branch').value = cfg.branch || 'main';
+        }
+        document.getElementById('configModal').style.display = 'flex';
+    };
+
+    document.getElementById('btnSaveConfig').onclick = () => {
+        const config = {
+            token: document.getElementById('c-token').value.trim(),
+            owner: document.getElementById('c-owner').value.trim(),
+            repo: document.getElementById('c-repo').value.trim(),
+            branch: document.getElementById('c-branch').value.trim()
+        };
+        if(!config.token || !config.owner || !config.repo) {
+            alert("配置信息不完整，请填写 Token、用户名和仓库名称！");
+            return;
+        }
+        localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(config));
+        closeModal('configModal');
+        showToast("⚙️ 云端配置保存成功！");
+    };
+
+    // --- 💡 核心功能：上传 JSON 到同级目录下 ---
     document.getElementById('btnCloudPush').onclick = async () => {
+        const cfg = getCloudConfig();
+        if(!cfg) { alert("请先点击 '云端凭证配置' 设置您的 GitHub 凭证！"); return; }
+
+        const now = new Date();
+        const timestamp = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + "_" + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
+        const newFileName = `task_data_${timestamp}.json`; // 保存为以当前时间命名的 json 文件
+
         const btn = document.getElementById('btnCloudPush');
-        const originalText = btn.innerText;
         btn.innerText = "⚡ 正在同步...";
         btn.disabled = true;
 
-        const dataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
-
-        const bodyData = {
-            description: "Task Scheduler Backup Data",
-            files: {
-                [GIST_FILE_NAME]: {
-                    content: dataStr
-                }
-            }
-        };
+        const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
+        // 将内容转换为 Base64 编码以适配 GitHub Content API
+        const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
 
         try {
-            const response = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-                method: "PATCH",
+            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}`;
+            const response = await fetch(url, {
+                method: "PUT",
                 headers: {
-                    "Authorization": `token ${GITHUB_TOKEN}`,
-                    "Accept": "application/vnd.github.v3+json",
+                    "Authorization": `Bearer ${cfg.token}`,
+                    "Accept": "application/vnd.github+json",
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify(bodyData)
+                body: JSON.stringify({
+                    message: `Backup task data: ${newFileName}`,
+                    content: base64Content,
+                    branch: cfg.branch
+                })
             });
 
-            if (response.ok) {
-                showToast("☁️ 成功同步备份到 GitHub 云端！");
+            if(response.ok) {
+                showToast(`☁️ 成功在 HTML 同级目录下创建备份：${newFileName}`);
             } else {
-                const errJson = await response.json();
-                alert("同步失败，请检查Token权限或网络错误: " + (errJson.message || ''));
+                const err = await response.json();
+                alert("云端备份失败：" + (err.message || response.statusText));
             }
-        } catch (err) {
-            alert("同步发生网络异常: " + err.message);
+        } catch (e) {
+            alert("连接 GitHub API 发生网络异常：" + e.message);
         } finally {
-            btn.innerText = originalText;
+            btn.innerText = "☁️ 同步到云端";
             btn.disabled = false;
         }
     };
 
-    // --- 核心改动：从 GitHub Gist 云端下载覆盖本地系统 ---
+    // --- 💡 核心功能：扫描同目录下所有 JSON 并调出选择列表 ---
     document.getElementById('btnCloudPull').onclick = async () => {
-        if (!confirm("确定要从 GitHub 云端拉取数据吗？这将会覆盖你当前网页的本地状态。")) return;
+        const cfg = getCloudConfig();
+        if(!cfg) { alert("请先点击 '云端凭证配置' 设置您的 GitHub 凭证！"); return; }
 
         const btn = document.getElementById('btnCloudPull');
-        const originalText = btn.innerText;
-        btn.innerText = "⚡ 正在下载...";
+        btn.innerText = "⚡ 正在扫描...";
         btn.disabled = true;
 
         try {
-            const response = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+            // 获取同级目录下的文件列表（传入参数不带文件名即为获取根目录下内容）
+            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/?ref=${cfg.branch}`;
+            const response = await fetch(url, {
                 method: "GET",
                 headers: {
-                    "Authorization": `token ${GITHUB_TOKEN}`,
-                    "Accept": "application/vnd.github.v3+json"
+                    "Authorization": `Bearer ${cfg.token}`,
+                    "Accept": "application/vnd.github+json"
                 }
             });
 
-            if (response.ok) {
-                const gistData = await response.json();
-                const targetFile = gistData.files[GIST_FILE_NAME];
+            if(response.ok) {
+                const files = await response.json();
+                // 筛选出同目录下所有以 .json 结尾的文件
+                const jsonFiles = files.filter(file => file.name.toLowerCase().endsWith('.json') && file.type === 'file');
                 
-                if (targetFile && targetFile.content) {
-                    saveHistory(); // 留个后悔药，支持 Ctrl+Z 恢复
-                    
-                    const parsed = JSON.parse(targetFile.content);
-                    if (parsed.tasksMap) tasksMap = parsed.tasksMap;
-                    if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
-                    
-                    saveData();
-                    renderTable();
-                    showToast("📥 成功自云端导入最新的日程资产！");
-                } else {
-                    alert("云端 Gist 中目前还没有找到任何日程备份，请先点击'同步到云端'！");
+                if(jsonFiles.length === 0) {
+                    alert("云端 HTML 同目录下暂未检测到任何 .json 备份文件，请先执行‘同步到云端’！");
+                    return;
                 }
+
+                // 渲染渲染文件选择列表
+                const listContainer = document.getElementById('cloudFileList');
+                listContainer.innerHTML = '';
+                selectedCloudFileDownloadUrl = null;
+                document.getElementById('btnConfirmLoadCloud').disabled = true;
+
+                // 降序排序，最新的文件排在最上方
+                jsonFiles.sort((a, b) => b.name.localeCompare(a.name));
+
+                jsonFiles.forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'file-item';
+                    
+                    // 友好化计算显示大小
+                    const sizeKB = (file.size / 1024).toFixed(2);
+                    item.innerHTML = `<span>📄 ${file.name}</span><span style="color:#999;">${sizeKB} KB</span>`;
+                    
+                    item.onclick = () => {
+                        document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+                        item.classList.add('selected');
+                        selectedCloudFileDownloadUrl = file.download_url; // 记录下载直链
+                        document.getElementById('btnConfirmLoadCloud').disabled = false;
+                    };
+                    listContainer.appendChild(item);
+                });
+
+                document.getElementById('cloudFilesModal').style.display = 'flex';
             } else {
-                alert("下载失败，请检查网络或 Token 配置。");
+                alert("拉取云端文件列表失败，请确认凭证、仓库名与分支是否输入正确。");
             }
-        } catch (err) {
-            alert("下载数据时发生异常: " + err.message);
+        } catch (e) {
+            alert("拉取列表时发生网络异常：" + e.message);
         } finally {
-            btn.innerText = originalText;
+            btn.innerText = "📥 从云端选择下载";
             btn.disabled = false;
         }
     };
 
-    // --- 本地 JSON 导出与导入逻辑 ---
-    document.getElementById('btnExportJson').onclick = () => {
-        const dataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
-        const blob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `task_scheduler_backup_${formatDateKey(new Date())}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
+    // 执行从用户选中的云端直链下载数据并覆盖
+    document.getElementById('btnConfirmLoadCloud').onclick = async () => {
+        if(!selectedCloudFileDownloadUrl) return;
+        if(!confirm("确定要拉取选中的云端数据吗？这将会完整覆盖您当前的本地页面状态！")) return;
 
-    document.getElementById('btnImportJson').onclick = () => {
-        document.getElementById('importFile').click();
-    };
+        try {
+            // 使用直链获取 JSON 的纯文本内容
+            const response = await fetch(selectedCloudFileDownloadUrl);
+            if(response.ok) {
+                const parsed = await response.json();
+                
+                saveHistory(); // 存入历史记录，支持用户 Ctrl + Z 快捷键吃后悔药
+                if (parsed.tasksMap) tasksMap = parsed.tasksMap;
+                if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
 
-    document.getElementById('importFile').onchange = function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-            try {
-                const parsed = JSON.parse(evt.target.result);
-                if (parsed && typeof parsed === 'object') {
-                    saveHistory(); 
-                    
-                    if (parsed.tasksMap) tasksMap = parsed.tasksMap;
-                    if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
-                    
-                    saveData();
-                    renderTable();
-                    alert('JSON 数据导入成功！');
-                } else {
-                    alert('导入失败：JSON 文件数据结构不满足本系统格式。');
-                }
-            } catch (err) {
-                alert('导入失败：该文件损坏或不是合法的 JSON 文件。');
+                saveData();
+                renderTable();
+                closeModal('cloudFilesModal');
+                showToast("📥 云端特定版本日程数据已成功导入并刷新！");
+            } else {
+                alert("下载具体数据内容时失败。");
             }
-            document.getElementById('importFile').value = '';
-        };
-        reader.readAsText(file);
+        } catch(e) {
+            alert("拉取云端数据发生异常：" + e.message);
+        }
     };
 
     window.onload = () => {
