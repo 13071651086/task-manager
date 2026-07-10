@@ -806,53 +806,83 @@
         showToast("⚙️ 云端配置保存成功！");
     };
 
-    // --- 💡 核心功能：上传 JSON 到同级目录下 ---
-    document.getElementById('btnCloudPush').onclick = async () => {
-        const cfg = getCloudConfig();
-        if(!cfg) { alert("请先点击 '云端凭证配置' 设置您的 GitHub 凭证！"); return; }
+    // --- 💡 完美修正版：上传 JSON 到同级目录下（自动处理 SHA 锁） ---
+document.getElementById('btnCloudPush').onclick = async () => {
+    const cfg = getCloudConfig();
+    if(!cfg) { alert("请先点击 '云端凭证配置' 设置您的 GitHub 凭证！"); return; }
 
-        const now = new Date();
-        const timestamp = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + "_" + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
-        const newFileName = `task_data_${timestamp}.json`; // 保存为以当前时间命名的 json 文件
+    const now = new Date();
+    // 精确到分钟的时间戳
+    const timestamp = now.getFullYear() + 
+                      String(now.getMonth()+1).padStart(2,'0') + 
+                      String(now.getDate()).padStart(2,'0') + "_" + 
+                      String(now.getHours()).padStart(2,'0') + 
+                      String(now.getMinutes()).padStart(2,'0');
+    const newFileName = `task_data_${timestamp}.json`; 
 
-        const btn = document.getElementById('btnCloudPush');
-        btn.innerText = "⚡ 正在同步...";
-        btn.disabled = true;
+    const btn = document.getElementById('btnCloudPush');
+    btn.innerText = "⚡ 正在同步...";
+    btn.disabled = true;
 
-        const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
-        // 将内容转换为 Base64 编码以适配 GitHub Content API
-        const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
+    const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
+    const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
 
-        try {
-            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}`;
-            const response = await fetch(url, {
-                method: "PUT",
-                headers: {
-                    "Authorization": `Bearer ${cfg.token}`,
-                    "Accept": "application/vnd.github+json",
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    message: `Backup task data: ${newFileName}`,
-                    content: base64Content,
-                    branch: cfg.branch
-                })
-            });
-
-            if(response.ok) {
-                showToast(`☁️ 成功在 HTML 同级目录下创建备份：${newFileName}`);
-            } else {
-                const err = await response.json();
-                alert("云端备份失败：" + (err.message || response.statusText));
+    try {
+        const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}?ref=${cfg.branch}`;
+        
+        // 第一步：先尝试获取云端该文件的状态，检测是否已存在并获取 SHA
+        let currentSha = null;
+        const checkResponse = await fetch(url, {
+            method: "GET",
+            headers: {
+                "Authorization": `Bearer ${cfg.token}`,
+                "Accept": "application/vnd.github+json"
             }
-        } catch (e) {
-            alert("连接 GitHub API 发生网络异常：" + e.message);
-        } finally {
-            btn.innerText = "☁️ 同步到云端";
-            btn.disabled = false;
-        }
-    };
+        });
 
+        if (checkResponse.ok) {
+            // 如果文件已存在，提取它的 sha 锁
+            const fileInfo = await checkResponse.json();
+            currentSha = fileInfo.sha;
+        }
+
+        // 第二步：构建上传的 Body 数据
+        const bodyData = {
+            message: `Backup task data: ${newFileName}`,
+            content: base64Content,
+            branch: cfg.branch
+        };
+
+        // 如果存在旧文件，必须把 sha 传回去才能成功覆盖
+        if (currentSha) {
+            bodyData.sha = currentSha;
+        }
+
+        // 第三步：执行真正的 PUT 上传操作
+        const uploadUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}`;
+        const response = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: {
+                "Authorization": `Bearer ${cfg.token}`,
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(bodyData)
+        });
+
+        if(response.ok) {
+            showToast(`☁️ 成功在 HTML 同级目录下创建/更新备份：${newFileName}`);
+        } else {
+            const err = await response.json();
+            alert("云端备份失败：" + (err.message || response.statusText));
+        }
+    } catch (e) {
+        alert("连接 GitHub API 发生网络异常：" + e.message);
+    } finally {
+        btn.innerText = "☁️ 同步到云端";
+        btn.disabled = false;
+    }
+};
     // --- 💡 核心功能：扫描同目录下所有 JSON 并调出选择列表 ---
     document.getElementById('btnCloudPull').onclick = async () => {
         const cfg = getCloudConfig();
