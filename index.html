@@ -3,15 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>任务日程管理系统 - 云端版</title>
+    <title>小叽排单小工具</title>
     <style>
         :root {
             --border-color: #e0e0e0;
-            --bg-completed: #f1f9f3;
+            
+            /* 已完成：绿色系 */
+            --bg-completed: #e8f5e9;
             --text-completed: #2e7d32;
-            --bg-incomplete: #edf4fc;
-            --text-incomplete: #1976d2;
+            
+            /* 未完成：浅灰色系 */
+            --bg-incomplete: #f5f5f5;
+            --text-incomplete: #757575;
+            
             --bg-empty: #ffffff;
+            
+            /* 💡 蓝白科技风高亮核心色值 */
+            --tech-blue-border: #1e88e5; 
+            --tech-blue-bg: #f0f7ff; 
         }
 
         * {
@@ -71,8 +80,9 @@
             height: 100%;
         }
 
+        /* 💡 当前日期表头文字高亮 */
         .date-header.is-today {
-            color: #2e7d32;
+            color: var(--tech-blue-border);
             font-weight: bold;
         }
 
@@ -84,6 +94,19 @@
         .date-header .week-str {
             font-size: 13px;
             color: #666;
+        }
+
+        /* 💡 核心视觉回归：当前日期“整列高亮框起来”的 CSS 样式实现 */
+        th.today-column-highlight {
+            box-shadow: inset 2px 2px 0 var(--tech-blue-border), inset -2px 0 0 var(--tech-blue-border);
+            background-color: var(--tech-blue-bg) !important; 
+        }
+        td.today-column-highlight {
+            box-shadow: inset 2px 0 0 var(--tech-blue-border), inset -2px 0 0 var(--tech-blue-border);
+            background-color: #fbfdff; /* 给今天增加微弱的底色区分 */
+        }
+        tr:last-child td.today-column-highlight {
+            box-shadow: inset 2px 0 0 var(--tech-blue-border), inset -2px -2px 0 var(--tech-blue-border);
         }
 
         .nav-btn {
@@ -334,7 +357,7 @@
 <div class="footer-legend">
     <div class="legend-left">
         <div class="legend-item"><span class="legend-dot" style="background:#2e7d32"></span>已完成</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#1976d2"></span>未完成</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#757575"></span>未完成</div>
         <div class="legend-item" style="color: #888; margin-left: 20px;">提示：按住卡片稳定不动 0.6 秒切换状态 | 移动鼠标直接拖拽 | 双击空白新建/双击卡片编辑 | Ctrl+Z 撤销</div>
     </div>
     <div class="action-btns">
@@ -372,18 +395,18 @@
 <div class="modal-overlay" id="configModal">
     <div class="modal modal-cloud-w">
         <h3>GitHub 云端同步凭证配置</h3>
-        <span style="font-size:11px; color:#777; margin-top:4px;">数据将通过 API 直接传输至 GitHub，凭证仅保存在您本地浏览器中。</span>
-        <label>GitHub Personal Access Token (classic)</label>
+        <span style="font-size:11px; color:#777; margin-top:4px;">以下为系统内定默认值，如无更换账号需求请勿更改。</span>
+        <label>GitHub Personal Access Token</label>
         <input type="password" id="c-token" placeholder="ghp_xxxxxxxxxxxx">
         <label>GitHub 用户名 (Owner)</label>
         <input type="text" id="c-owner" placeholder="例如: 13071651086">
         <label>仓库名称 (Repository)</label>
-        <input type="text" id="c-repo" placeholder="例如: task-scheduler">
+        <input type="text" id="c-repo" placeholder="例如: task-manager">
         <label>分支名称 (Branch)</label>
         <input type="text" id="c-branch" value="main">
         <div class="modal-btns">
             <button class="btn-cancel" onclick="closeModal('configModal')">取消</button>
-            <button class="btn-save" id="btnSaveConfig">保存配置</button>
+            <button class="btn-save" id="btnSaveConfig">保存新配置</button>
         </div>
     </div>
 </div>
@@ -408,8 +431,15 @@
     let currentStartDate = new Date(); 
     let tasksMap = {};
     let historyStack = []; 
-    let selectedCloudFileSha = null;
     let selectedCloudFileDownloadUrl = null;
+
+    // 💡 按照要求，内定默认的云端全套配置参数
+    const DEFAULT_CLOUD_CONFIG = {
+        token: "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",
+        owner: "13071651086",
+        repo: "task-manager",
+        branch: "main"
+    };
 
     function formatDateKey(date) {
         const y = date.getFullYear();
@@ -425,7 +455,6 @@
         return d;
     }
 
-    // 从本地缓存加载配置及核心任务数据
     function loadData() {
         const localData = localStorage.getItem('TASK_SCHEDULER_DATA');
         if (localData) {
@@ -443,6 +472,11 @@
         } else {
             currentStartDate = getSundayOfThisWeek(new Date());
             initMockData();
+        }
+
+        // 初始化时，如果浏览器没有存储过凭证，直接注入默认设定的参数
+        if (!localStorage.getItem('GH_CLOUD_CONFIG')) {
+            localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(DEFAULT_CLOUD_CONFIG));
         }
     }
 
@@ -463,10 +497,9 @@
         tasksMap = {};
     }
 
-    // --- GitHub 账号配置存取辅助逻辑 ---
     function getCloudConfig() {
         const cfg = localStorage.getItem('GH_CLOUD_CONFIG');
-        return cfg ? JSON.parse(cfg) : null;
+        return cfg ? JSON.parse(cfg) : DEFAULT_CLOUD_CONFIG;
     }
 
     const weekdayCN = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
@@ -491,6 +524,11 @@
             const th = document.createElement('th');
             const dateKey = formatDateKey(date);
             const isToday = dateKey === todayKey;
+
+            // 💡 针对当前日期列的表头运用高亮样式类名
+            if (isToday) {
+                th.className = 'today-column-highlight';
+            }
 
             th.innerHTML = `
                 <div class="date-header ${isToday ? 'is-today' : ''}">
@@ -527,8 +565,11 @@
 
             weekDates.forEach(date => {
                 const dateKey = formatDateKey(date);
+                const isToday = dateKey === todayKey;
                 const td = document.createElement('td');
-                td.className = 'task-cell';
+                
+                // 💡 核心视觉回归：针对当前日期列下所有的单元格运用高亮样式类名
+                td.className = 'task-cell' + (isToday ? ' today-column-highlight' : '');
                 td.dataset.date = dateKey;
                 td.dataset.row = rowId;
 
@@ -778,15 +819,12 @@
         setTimeout(() => t.style.opacity = '0', 2000);
     }
 
-    // --- 💡 核心功能：处理云端同步配置 ---
     document.getElementById('btnConfigCloud').onclick = () => {
         const cfg = getCloudConfig();
-        if(cfg) {
-            document.getElementById('c-token').value = cfg.token || '';
-            document.getElementById('c-owner').value = cfg.owner || '';
-            document.getElementById('c-repo').value = cfg.repo || '';
-            document.getElementById('c-branch').value = cfg.branch || 'main';
-        }
+        document.getElementById('c-token').value = cfg.token || '';
+        document.getElementById('c-owner').value = cfg.owner || '';
+        document.getElementById('c-repo').value = cfg.repo || '';
+        document.getElementById('c-branch').value = cfg.branch || 'main';
         document.getElementById('configModal').style.display = 'flex';
     };
 
@@ -798,102 +836,91 @@
             branch: document.getElementById('c-branch').value.trim()
         };
         if(!config.token || !config.owner || !config.repo) {
-            alert("配置信息不完整，请填写 Token、用户名和仓库名称！");
+            alert("配置信息不完整，无法保存！");
             return;
         }
         localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(config));
         closeModal('configModal');
-        showToast("⚙️ 云端配置保存成功！");
+        showToast("⚙️ 云端自定义配置保存成功！");
     };
 
-    // --- 💡 完美修正版：上传 JSON 到同级目录下（自动处理 SHA 锁） ---
-document.getElementById('btnCloudPush').onclick = async () => {
-    const cfg = getCloudConfig();
-    if(!cfg) { alert("请先点击 '云端凭证配置' 设置您的 GitHub 凭证！"); return; }
+    // --- 💡 优化同步逻辑（解决 sha 缺失问题） ---
+    document.getElementById('btnCloudPush').onclick = async () => {
+        const cfg = getCloudConfig();
+        if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整注入，请点击凭证配置检查！"); return; }
 
-    const now = new Date();
-    // 精确到分钟的时间戳
-    const timestamp = now.getFullYear() + 
-                      String(now.getMonth()+1).padStart(2,'0') + 
-                      String(now.getDate()).padStart(2,'0') + "_" + 
-                      String(now.getHours()).padStart(2,'0') + 
-                      String(now.getMinutes()).padStart(2,'0');
-    const newFileName = `task_data_${timestamp}.json`; 
+        const now = new Date();
+        const timestamp = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + "_" + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
+        const newFileName = `task_data_${timestamp}.json`; 
 
-    const btn = document.getElementById('btnCloudPush');
-    btn.innerText = "⚡ 正在同步...";
-    btn.disabled = true;
+        const btn = document.getElementById('btnCloudPush');
+        btn.innerText = "⚡ 正在同步...";
+        btn.disabled = true;
 
-    const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
-    const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
+        const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
+        const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
 
-    try {
-        const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}?ref=${cfg.branch}`;
-        
-        // 第一步：先尝试获取云端该文件的状态，检测是否已存在并获取 SHA
-        let currentSha = null;
-        const checkResponse = await fetch(url, {
-            method: "GET",
-            headers: {
-                "Authorization": `Bearer ${cfg.token}`,
-                "Accept": "application/vnd.github+json"
+        try {
+            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}?ref=${cfg.branch}`;
+            
+            let currentSha = null;
+            const checkResponse = await fetch(url, {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${cfg.token}`,
+                    "Accept": "application/vnd.github+json"
+                }
+            });
+
+            if (checkResponse.ok) {
+                const fileInfo = await checkResponse.json();
+                currentSha = fileInfo.sha;
             }
-        });
 
-        if (checkResponse.ok) {
-            // 如果文件已存在，提取它的 sha 锁
-            const fileInfo = await checkResponse.json();
-            currentSha = fileInfo.sha;
+            const bodyData = {
+                message: `Backup task data: ${newFileName}`,
+                content: base64Content,
+                branch: cfg.branch
+            };
+
+            if (currentSha) {
+                bodyData.sha = currentSha;
+            }
+
+            const uploadUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}`;
+            const response = await fetch(uploadUrl, {
+                method: "PUT",
+                headers: {
+                    "Authorization": `Bearer ${cfg.token}`,
+                    "Accept": "application/vnd.github+json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(bodyData)
+            });
+
+            if(response.ok) {
+                showToast(`☁️ 成功在 HTML 同级目录下创建备份：${newFileName}`);
+            } else {
+                const err = await response.json();
+                alert("云端备份失败：" + (err.message || response.statusText));
+            }
+        } catch (e) {
+            alert("连接 GitHub API 发生网络异常：" + e.message);
+        } finally {
+            btn.innerText = "☁️ 同步到云端";
+            btn.disabled = false;
         }
+    };
 
-        // 第二步：构建上传的 Body 数据
-        const bodyData = {
-            message: `Backup task data: ${newFileName}`,
-            content: base64Content,
-            branch: cfg.branch
-        };
-
-        // 如果存在旧文件，必须把 sha 传回去才能成功覆盖
-        if (currentSha) {
-            bodyData.sha = currentSha;
-        }
-
-        // 第三步：执行真正的 PUT 上传操作
-        const uploadUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}`;
-        const response = await fetch(uploadUrl, {
-            method: "PUT",
-            headers: {
-                "Authorization": `Bearer ${cfg.token}`,
-                "Accept": "application/vnd.github+json",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(bodyData)
-        });
-
-        if(response.ok) {
-            showToast(`☁️ 成功在 HTML 同级目录下创建/更新备份：${newFileName}`);
-        } else {
-            const err = await response.json();
-            alert("云端备份失败：" + (err.message || response.statusText));
-        }
-    } catch (e) {
-        alert("连接 GitHub API 发生网络异常：" + e.message);
-    } finally {
-        btn.innerText = "☁️ 同步到云端";
-        btn.disabled = false;
-    }
-};
-    // --- 💡 核心功能：扫描同目录下所有 JSON 并调出选择列表 ---
     document.getElementById('btnCloudPull').onclick = async () => {
         const cfg = getCloudConfig();
-        if(!cfg) { alert("请先点击 '云端凭证配置' 设置您的 GitHub 凭证！"); return; }
+        if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整注入！"); return; }
 
         const btn = document.getElementById('btnCloudPull');
         btn.innerText = "⚡ 正在扫描...";
         btn.disabled = true;
 
         try {
-            // 获取同级目录下的文件列表（传入参数不带文件名即为获取根目录下内容）
             const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/?ref=${cfg.branch}`;
             const response = await fetch(url, {
                 method: "GET",
@@ -905,7 +932,6 @@ document.getElementById('btnCloudPush').onclick = async () => {
 
             if(response.ok) {
                 const files = await response.json();
-                // 筛选出同目录下所有以 .json 结尾的文件
                 const jsonFiles = files.filter(file => file.name.toLowerCase().endsWith('.json') && file.type === 'file');
                 
                 if(jsonFiles.length === 0) {
@@ -913,27 +939,23 @@ document.getElementById('btnCloudPush').onclick = async () => {
                     return;
                 }
 
-                // 渲染渲染文件选择列表
                 const listContainer = document.getElementById('cloudFileList');
                 listContainer.innerHTML = '';
                 selectedCloudFileDownloadUrl = null;
                 document.getElementById('btnConfirmLoadCloud').disabled = true;
 
-                // 降序排序，最新的文件排在最上方
                 jsonFiles.sort((a, b) => b.name.localeCompare(a.name));
 
                 jsonFiles.forEach(file => {
                     const item = document.createElement('div');
                     item.className = 'file-item';
-                    
-                    // 友好化计算显示大小
                     const sizeKB = (file.size / 1024).toFixed(2);
                     item.innerHTML = `<span>📄 ${file.name}</span><span style="color:#999;">${sizeKB} KB</span>`;
                     
                     item.onclick = () => {
                         document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
                         item.classList.add('selected');
-                        selectedCloudFileDownloadUrl = file.download_url; // 记录下载直链
+                        selectedCloudFileDownloadUrl = file.download_url;
                         document.getElementById('btnConfirmLoadCloud').disabled = false;
                     };
                     listContainer.appendChild(item);
@@ -951,18 +973,16 @@ document.getElementById('btnCloudPush').onclick = async () => {
         }
     };
 
-    // 执行从用户选中的云端直链下载数据并覆盖
     document.getElementById('btnConfirmLoadCloud').onclick = async () => {
         if(!selectedCloudFileDownloadUrl) return;
         if(!confirm("确定要拉取选中的云端数据吗？这将会完整覆盖您当前的本地页面状态！")) return;
 
         try {
-            // 使用直链获取 JSON 的纯文本内容
             const response = await fetch(selectedCloudFileDownloadUrl);
             if(response.ok) {
                 const parsed = await response.json();
                 
-                saveHistory(); // 存入历史记录，支持用户 Ctrl + Z 快捷键吃后悔药
+                saveHistory(); 
                 if (parsed.tasksMap) tasksMap = parsed.tasksMap;
                 if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
 
