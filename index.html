@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>任务日程管理系统</title>
+    <title>小叽最最最可爱了！！！！</title>
     <style>
         :root {
             --border-color: #e0e0e0;
@@ -481,8 +481,8 @@
 
 <div class="modal-overlay" id="cloudFilesModal">
     <div class="modal modal-cloud-w">
-        <h3>请选择要拉取的云端 JSON 备份</h3>
-        <span style="font-size:11px; color:#777; margin-top:4px;">选择任意历史文件并确认下载后，其数据将同步覆盖自动保存到默认数据源 <b>task_data.json</b> 中：</span>
+        <h3>请选择要拉取的云端历史快照</h3>
+        <span style="font-size:11px; color:#777; margin-top:4px;">选择历史文件确认后，其数据将同步覆盖自动保存到默认数据源 <b>task_data.json</b> 中（列表已排除默认源）：</span>
         <div class="file-list-container" id="cloudFileList">
             </div>
         <div class="modal-btns">
@@ -501,7 +501,6 @@
     let historyStack = []; 
     let selectedCloudFileDownloadUrl = null;
 
-    // 内定默认的云端全套配置参数
     const DEFAULT_CLOUD_CONFIG = {
         token: "",
         owner: "13071651086",
@@ -523,74 +522,66 @@
         return d;
     }
 
-    // 💡 网页初始化加载逻辑重构：先读本地，若配置了云端则自动从文件 task_data.json 读取最新状态
+    // 💡 1. 初始化重构：不再读取本地 LocalStorage，直接强制拉取服务器默认数据源文件 task_data.json
     async function loadData() {
-        const localData = localStorage.getItem('TASK_SCHEDULER_DATA');
-        if (localData) {
-            try {
-                const parsed = JSON.parse(localData);
-                tasksMap = parsed.tasksMap || {};
-                if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
-            } catch (e) { initMockData(); }
-        } else {
-            currentStartDate = getSundayOfThisWeek(new Date());
-            initMockData();
-        }
+        currentStartDate = getSundayOfThisWeek(new Date());
+        initMockData();
 
         if (!localStorage.getItem('GH_CLOUD_CONFIG')) {
             localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(DEFAULT_CLOUD_CONFIG));
         }
         updateUndoButtonVisibility();
 
-        // 💡 核心新增：打开网页时，自动静默拉取云端的默认数据源文件 task_data.json
+        // 💡 直接自启动从云端读取默认数据源文件
         await autoFetchDefaultCloudFile();
     }
 
-    // 💡 静默自启加载 task_data.json
+    // 💡 2. 刷新或打开网页时，直接读取默认数据源逻辑
     async function autoFetchDefaultCloudFile() {
         const cfg = getCloudConfig();
         if(!cfg.token || !cfg.owner || !cfg.repo) return;
         
         try {
-            // 拼接默认数据源的 GitHub 原始下载地址
-            const url = `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/task_data.json?t=${new Date().getTime()}`;
+            // 通过 API 获取内容防止 CDN 缓存引起的数据不一致
+            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/task_data.json?ref=${cfg.branch}&t=${new Date().getTime()}`;
             const response = await fetch(url, {
-                headers: { "Authorization": `token ${cfg.token}` }
+                method: "GET",
+                headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json" }
             });
             if(response.ok) {
-                const parsed = await response.json();
+                const fileInfo = await response.json();
+                // 解决 GitHub API 对中文传输采用 base64 导致乱码的问题
+                const rawContent = decodeURIComponent(escape(atob(fileInfo.content.replace(/\s/g, ''))));
+                const parsed = JSON.parse(rawContent);
                 if (parsed && parsed.tasksMap) {
                     tasksMap = parsed.tasksMap;
                     if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
-                    saveLocalStorageOnly();
                     renderTable();
-                    showToast("🔄 已自动从云端 task_data.json 加载最新数据");
+                    showToast("🔄 网页已加载：成功读取云端默认数据源");
                 }
+            } else {
+                console.log("未检测到云端默认数据源文件，等待后续操作自动创建。");
             }
-        } catch(e) { console.log("静默读取云端 task_data.json 失败，使用本地缓存运行:", e.message); }
+        } catch(e) { 
+            console.log("读取云端 task_data.json 失败:", e.message);
+            showToast("⚠️ 未能连上云端默认数据源");
+        }
     }
 
-    // 💡 本地核心保存与“云端默认数据源异步改写”封装
+    // 💡 3. 有操作变动时，自动后台直接异步更新更改该文件
     function saveData() {
-        saveLocalStorageOnly();
-        // 💡 只要数据发生操作变动，自动同步更改云端的 task_data.json
+        // 保存内存状态并立刻推送到云端默认文件 task_data.json
         autoPushToDefaultCloudFile();
     }
 
-    function saveLocalStorageOnly() {
-        const dataToSave = {
-            tasksMap: tasksMap,
-            lastViewDate: formatDateKey(currentStartDate)
-        };
-        localStorage.setItem('TASK_SCHEDULER_DATA', JSON.stringify(dataToSave));
-    }
-
-    // 💡 自动静默更改服务器上的默认 task_data.json 文件
     async function autoPushToDefaultCloudFile() {
         const cfg = getCloudConfig();
         if(!cfg.token || !cfg.owner || !cfg.repo) return;
 
-        const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
+        const currentDataStr = JSON.stringify({
+            tasksMap: tasksMap,
+            lastViewDate: formatDateKey(currentStartDate)
+        });
         const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
         const defaultFileName = "task_data.json";
 
@@ -642,7 +633,7 @@
             renderTable();
             saveData();
             updateUndoButtonVisibility();
-            showToast("已撤销上一步操作并自动覆盖云端");
+            showToast("已撤销上一步操作并同步更新默认数据源");
         }
     }
 
@@ -810,7 +801,6 @@
     function navigateWeek(days) {
         currentStartDate.setDate(currentStartDate.getDate() + days);
         renderTable();
-        saveLocalStorageOnly(); // 纯切周只更新本地，不强制刷云端文件避免冗余API请求
     }
 
     window.addEventListener('wheel', (e) => {
@@ -883,7 +873,7 @@
         draggedCardInfo = null;
         renderTable();
         saveData();
-        showToast("卡片已成功拖拽删除并同步云端");
+        showToast("卡片已拖拽删除并同步默认数据源");
     });
 
     document.getElementById('btnToggleMask').onclick = function() {
@@ -974,9 +964,9 @@
         setTimeout(() => t.style.opacity = '0', 2500);
     }
 
-    // --- 📥 本地 JSON 导出与导入（导入时同步以该数据覆盖写入服务器默认源） ---
+    // --- 本地 JSON 导出与导入（同步覆盖默认源） ---
     document.getElementById('btnExportJson').onclick = () => {
-        const dataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
+        const dataStr = JSON.stringify({ tasksMap: tasksMap, lastViewDate: formatDateKey(currentStartDate) });
         const blob = new Blob([dataStr], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1000,16 +990,16 @@
                     if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
                     
                     renderTable();
-                    saveData(); // 💡 触发改写本地并强制后台覆盖更新云端的 task_data.json
-                    showToast('📥 本地 JSON 导入成功并已强制保存为服务器核心源文件！');
+                    saveData(); 
+                    showToast('📥 本地 JSON 导入成功并已强制更新云端默认数据源！');
                 } else { alert('导入失败：数据结构不符。'); }
-            } catch (err) { alert('导入失败：文件有损或非合法JSON。'); }
+            } catch (err) { alert('导入失败：非合法JSON。'); }
             document.getElementById('importFile').value = '';
         };
         reader.readAsText(file);
     };
 
-    // --- ☁️ 服务器独立备份生成逻辑（更名为备份到服务器） ---
+    // --- 云端同步接口配置 ---
     document.getElementById('btnConfigCloud').onclick = () => {
         const cfg = getCloudConfig();
         document.getElementById('c-token').value = cfg.token || '';
@@ -1033,7 +1023,7 @@
         autoFetchDefaultCloudFile();
     };
 
-    // 💡 📦 点击生成独立的历史快照文件
+    // 💡 📦 备份到服务器：点击生成独立的历史快照文件
     document.getElementById('btnCloudPush').onclick = async () => {
         const cfg = getCloudConfig();
         if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整注入，请先配置！"); return; }
@@ -1045,7 +1035,7 @@
         const btn = document.getElementById('btnCloudPush');
         btn.innerText = "⚡ 正在生成快照..."; btn.disabled = true;
 
-        const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
+        const currentDataStr = JSON.stringify({ tasksMap: tasksMap, lastViewDate: formatDateKey(currentStartDate) });
         const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
 
         try {
@@ -1070,7 +1060,7 @@
         finally { btn.innerText = "📦 备份到服务器"; btn.disabled = false; }
     };
 
-    // --- 📥 扫描云端文件列表并下载载入逻辑（下载后覆盖写入为当前 task_data.json） ---
+    // 💡 4. 从云端选择下载逻辑：排除默认数据源文件 task_data.json
     document.getElementById('btnCloudPull').onclick = async () => {
         const cfg = getCloudConfig();
         if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整配置！"); return; }
@@ -1087,10 +1077,16 @@
 
             if(response.ok) {
                 const files = await response.json();
-                const jsonFiles = files.filter(file => file.name.toLowerCase().endsWith('.json') && file.type === 'file');
+                
+                // 💡 核心过滤：文件后缀为 .json ，且文件名绝对不等于 "task_data.json" (排除默认源)
+                const jsonFiles = files.filter(file => 
+                    file.name.toLowerCase().endsWith('.json') && 
+                    file.type === 'file' && 
+                    file.name !== 'task_data.json'
+                );
                 
                 if(jsonFiles.length === 0) {
-                    alert("云端仓库中暂未检测到任何 .json 备份文件！"); return;
+                    alert("云端仓库中暂未检测到任何可用的历史备份快照文件！"); return;
                 }
 
                 const listContainer = document.getElementById('cloudFileList');
@@ -1104,9 +1100,7 @@
                     const item = document.createElement('div');
                     item.className = 'file-item';
                     const sizeKB = (file.size / 1024).toFixed(2);
-                    // 高亮标记出哪一个是核心默认源文件，方便区分
-                    const isDefault = file.name === "task_data.json" ? " <span style='color:#2e7d32;font-weight:bold;'>(默认数据源)</span>" : "";
-                    item.innerHTML = `<span>📄 ${file.name}${isDefault}</span><span style="color:#999;">${sizeKB} KB</span>`;
+                    item.innerHTML = `<span>📄 ${file.name}</span><span style="color:#999;">${sizeKB} KB</span>`;
                     
                     item.onclick = () => {
                         document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
@@ -1117,17 +1111,18 @@
                     listContainer.appendChild(item);
                 });
                 document.getElementById('cloudFilesModal').style.display = 'flex';
-            } else { alert("扫描文件失败，请检查 Token 权限。"); }
+            } else { alert("扫描文件失败，请检查配置。"); }
         } catch (e) { alert("网络异常：" + e.message); }
         finally { btn.innerText = "📥 从云端选择下载"; btn.disabled = false; }
     };
 
     document.getElementById('btnConfirmLoadCloud').onclick = async () => {
         if(!selectedCloudFileDownloadUrl) return;
-        if(!confirm("确定载入此文件吗？当前页面会被覆盖，同时此数据会被强制同步更新到核心源 task_data.json 中！")) return;
+        if(!confirm("确定载入此历史备份吗？这会覆盖当前页面，并自动重写保存到云端 task_data.json 默认数据源中！")) return;
 
         try {
-            const response = await fetch(selectedCloudFileDownloadUrl);
+            // 为下载链接追加时间戳防止浏览器强缓存旧数据
+            const response = await fetch(selectedCloudFileDownloadUrl + (selectedCloudFileDownloadUrl.includes('?') ? '&' : '?') + 't=' + new Date().getTime());
             if(response.ok) {
                 const parsed = await response.json();
                 
@@ -1138,18 +1133,16 @@
                 renderTable();
                 closeModal('cloudFilesModal');
 
-                // 💡 关键所在：读取其他文件的数据时，以该文件的数据强制回写到 task_data.json
-                saveLocalStorageOnly(); 
+                // 强制触发覆写到云端 task_data.json
                 await autoPushToDefaultCloudFile(); 
 
-                showToast("📥 备份数据读取成功，已更新覆盖为核心 task_data.json 源文件！");
+                showToast("📥 历史快照载入成功，已重写为核心默认数据源文件！");
             } else { alert("读取数据失败。"); }
         } catch(e) { alert("发生异常：" + e.message); }
     };
 
     window.onload = () => {
         loadData();
-        renderTable();
     };
 </script>
 
