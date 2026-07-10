@@ -1,0 +1,1009 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小叽排单小工具</title>
+    <style>
+        :root {
+            --border-color: #e0e0e0;
+            
+            /* 已完成：绿色系 */
+            --bg-completed: #e8f5e9;
+            --text-completed: #2e7d32;
+            
+            /* 未完成：浅灰色系 */
+            --bg-incomplete: #f5f5f5;
+            --text-incomplete: #757575;
+            
+            --bg-empty: #ffffff;
+            
+            /* 💡 蓝白科技风高亮核心色值 */
+            --tech-blue-border: #1e88e5; 
+            --tech-blue-bg: #f0f7ff; 
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+            overflow-y: scroll;
+        }
+
+        .container {
+            max-width: 100%;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            overflow-x: auto;
+            margin-bottom: 70px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            min-width: 1200px;
+        }
+
+        th, td {
+            border: 1px solid var(--border-color);
+            vertical-align: top;
+            position: relative;
+        }
+
+        th {
+            background-color: #fafafa;
+            height: 60px;
+            font-weight: 600;
+            color: #333;
+            text-align: center;
+        }
+
+        th.row-header {
+            width: 80px;
+            background: #ffffff;
+        }
+
+        .date-header {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+        }
+
+        /* 💡 当前日期表头文字高亮 */
+        .date-header.is-today {
+            color: var(--tech-blue-border);
+            font-weight: bold;
+        }
+
+        .date-header .date-str {
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .date-header .week-str {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* 💡 核心视觉回归：当前日期“整列高亮框起来”的 CSS 样式实现 */
+        th.today-column-highlight {
+            box-shadow: inset 2px 2px 0 var(--tech-blue-border), inset -2px 0 0 var(--tech-blue-border);
+            background-color: var(--tech-blue-bg) !important; 
+        }
+        td.today-column-highlight {
+            box-shadow: inset 2px 0 0 var(--tech-blue-border), inset -2px 0 0 var(--tech-blue-border);
+            background-color: #fbfdff; /* 给今天增加微弱的底色区分 */
+        }
+        tr:last-child td.today-column-highlight {
+            box-shadow: inset 2px 0 0 var(--tech-blue-border), inset -2px -2px 0 var(--tech-blue-border);
+        }
+
+        .nav-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            padding: 10px;
+            font-weight: bold;
+            color: #999;
+            transition: color 0.2s;
+        }
+        .nav-btn:hover { color: #333; }
+        .nav-prev { left: 10px; }
+        .nav-next { right: 10px; }
+
+        .row-title {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            font-weight: bold;
+            font-size: 16px;
+            color: #000;
+            min-height: 140px;
+        }
+
+        td.task-cell {
+            padding: 8px;
+            background-color: var(--bg-empty);
+            transition: background-color 0.2s;
+        }
+
+        td.task-cell.drag-over {
+            background-color: #f0f0f0;
+            border: 2px dashed #999;
+        }
+
+        .task-card {
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: #333;
+            cursor: grab;
+            height: 100%;
+            min-height: 130px;
+            position: relative;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .task-card:active {
+            cursor: grabbing;
+        }
+
+        .task-card.completed {
+            background-color: var(--bg-completed);
+            border-top: 4px solid var(--text-completed);
+        }
+
+        .task-card.incomplete {
+            background-color: var(--bg-incomplete);
+            border-top: 4px solid var(--text-incomplete);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+        .status-badge::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .completed .status-badge { color: var(--text-completed); }
+        .completed .status-badge::before { background-color: var(--text-completed); }
+        .incomplete .status-badge { color: var(--text-incomplete); }
+        .incomplete .status-badge::before { background-color: var(--text-incomplete); }
+
+        .task-field {
+            word-break: break-all;
+            margin-bottom: 2px;
+            color: #444;
+        }
+
+        /* 底部操作控制栏 */
+        .footer-legend {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: #f5f5f5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            font-size: 13px;
+            z-index: 998;
+            box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
+        }
+        .legend-left {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+        .action-btns {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-action {
+            padding: 6px 12px;
+            font-size: 12px;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #444;
+            font-weight: 500;
+        }
+        .btn-action:hover {
+            background: #f0f0f0;
+            border-color: #999;
+            color: #000;
+        }
+        .btn-primary { background: #e3f2fd; border-color: #90caf9; color: #0d47a1; }
+        .btn-primary:hover { background: #bbdefb; }
+        .btn-purple { background: #f3e5f5; border-color: #ce93d8; color: #4a148c; }
+        .btn-purple:hover { background: #e1bee7; }
+
+        /* 模态弹窗通用样式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            user-select: text;
+        }
+        .modal {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+        }
+        .modal h3 { margin-bottom: 12px; font-size: 16px; }
+        
+        /* 编辑面板双栏 */
+        .modal-edit-w { width: 580px; }
+        .modal-body { display: flex; gap: 20px; }
+        .modal-left { flex: 1; }
+        .modal-right {
+            width: 220px;
+            border-left: 1px solid #eee;
+            padding-left: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal label { display: block; font-size: 12px; color: #666; margin-top: 8px; }
+        .modal textarea, .modal input, .modal select {
+            width: 100%; padding: 6px; margin-top: 4px;
+            border: 1px solid #ccc; border-radius: 4px; font-size: 12px;
+        }
+        .intel-input {
+            flex: 1;
+            resize: none;
+            margin-top: 6px;
+            background: #fafafa;
+            border: 1px dashed #999 !important;
+        }
+
+        .modal-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
+        .modal-btns button {
+            padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
+        }
+        .btn-save { background: #1976d2; color: white; }
+        .btn-del { background: #d32f2f; color: white; margin-right: auto; }
+        .btn-cancel { background: #eee; }
+
+        /* 云端选择下载专用列表样式 */
+        .modal-cloud-w { width: 450px; }
+        .file-list-container {
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .file-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            background: #fff;
+            transition: background 0.2s;
+        }
+        .file-item:last-child { border-bottom: none; }
+        .file-item:hover { background: #f5f5f5; }
+        .file-item.selected { background: #e3f2fd; font-weight: bold; color: #1976d2; }
+
+        .toast {
+            position: fixed;
+            bottom: 65px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <table id="taskTable">
+        <thead>
+            <tr id="headerRow">
+                <th class="row-header">任务</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+        </tbody>
+    </table>
+</div>
+
+<div class="footer-legend">
+    <div class="legend-left">
+        <div class="legend-item"><span class="legend-dot" style="background:#2e7d32"></span>已完成</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#757575"></span>未完成</div>
+        <div class="legend-item" style="color: #888; margin-left: 20px;">提示：按住卡片稳定不动 0.6 秒切换状态 | 移动鼠标直接拖拽 | 双击空白新建/双击卡片编辑 | Ctrl+Z 撤销</div>
+    </div>
+    <div class="action-btns">
+        <button class="btn-action" id="btnConfigCloud">⚙️ 云端凭证配置</button>
+        <button class="btn-action btn-primary" id="btnCloudPush">☁️ 同步到云端</button>
+        <button class="btn-action btn-purple" id="btnCloudPull">📥 从云端选择下载</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="editModal">
+    <div class="modal modal-edit-w">
+        <h3>编辑任务资料</h3>
+        <div class="modal-body">
+            <div class="modal-left">
+                <label>QQ</label><input type="text" id="m-qq">
+                <label>账号</label><input type="text" id="m-account">
+                <label>密码</label><input type="text" id="m-pwd">
+                <label>区服</label><input type="text" id="m-server">
+                <label>要求</label><textarea id="m-req" rows="3"></textarea>
+            </div>
+            <div class="modal-right">
+                <label style="font-weight: bold; color: #1976d2;">💡 智能识别文本框</label>
+                <span style="font-size: 11px; color:#999; margin-top:4px;">在这里粘贴整段文字，系统将自动识别拆分：</span>
+                <textarea id="m-intel" class="intel-input" placeholder="例如：QQ:32434235 账号：423346464345 密码：gdfhsdh..."></textarea>
+            </div>
+        </div>
+        <div class="modal-btns">
+            <button class="btn-del" id="btnDel">删除任务</button>
+            <button class="btn-cancel" id="btnCancel">取消</button>
+            <button class="btn-save" id="btnSave">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="configModal">
+    <div class="modal modal-cloud-w">
+        <h3>GitHub 云端同步凭证配置</h3>
+        <span style="font-size:11px; color:#777; margin-top:4px;">以下为系统内定默认值，如无更换账号需求请勿更改。</span>
+        <label>GitHub Personal Access Token</label>
+        <input type="password" id="c-token" placeholder="ghp_xxxxxxxxxxxx">
+        <label>GitHub 用户名 (Owner)</label>
+        <input type="text" id="c-owner" placeholder="例如: 13071651086">
+        <label>仓库名称 (Repository)</label>
+        <input type="text" id="c-repo" placeholder="例如: task-manager">
+        <label>分支名称 (Branch)</label>
+        <input type="text" id="c-branch" value="main">
+        <div class="modal-btns">
+            <button class="btn-cancel" onclick="closeModal('configModal')">取消</button>
+            <button class="btn-save" id="btnSaveConfig">保存新配置</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="cloudFilesModal">
+    <div class="modal modal-cloud-w">
+        <h3>请选择要下载载入的云端 JSON 备份</h3>
+        <span style="font-size:11px; color:#777; margin-top:4px;">系统已自动扫描同目录下的历史备份文件，选择一项即可覆盖当前数据：</span>
+        <div class="file-list-container" id="cloudFileList">
+            </div>
+        <div class="modal-btns">
+            <button class="btn-cancel" onclick="closeModal('cloudFilesModal')">取消</button>
+            <button class="btn-save" id="btnConfirmLoadCloud" disabled>确认下载并覆盖</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast">操作成功</div>
+
+<script>
+    const ROW_COUNT = 5; 
+    let currentStartDate = new Date(); 
+    let tasksMap = {};
+    let historyStack = []; 
+    let selectedCloudFileDownloadUrl = null;
+
+    // 💡 按照要求，内定默认的云端全套配置参数
+    const DEFAULT_CLOUD_CONFIG = {
+        token: "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",
+        owner: "13071651086",
+        repo: "task-manager",
+        branch: "main"
+    };
+
+    function formatDateKey(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    function getSundayOfThisWeek(date) {
+        const d = new Date(date);
+        const day = d.getDay();
+        d.setDate(d.getDate() - day);
+        return d;
+    }
+
+    function loadData() {
+        const localData = localStorage.getItem('TASK_SCHEDULER_DATA');
+        if (localData) {
+            try {
+                const parsed = JSON.parse(localData);
+                tasksMap = parsed.tasksMap || {};
+                if (parsed.lastViewDate) {
+                    currentStartDate = new Date(parsed.lastViewDate);
+                } else {
+                    currentStartDate = getSundayOfThisWeek(new Date());
+                }
+            } catch (e) {
+                initMockData();
+            }
+        } else {
+            currentStartDate = getSundayOfThisWeek(new Date());
+            initMockData();
+        }
+
+        // 初始化时，如果浏览器没有存储过凭证，直接注入默认设定的参数
+        if (!localStorage.getItem('GH_CLOUD_CONFIG')) {
+            localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(DEFAULT_CLOUD_CONFIG));
+        }
+    }
+
+    function saveData() {
+        const dataToSave = {
+            tasksMap: tasksMap,
+            lastViewDate: formatDateKey(currentStartDate)
+        };
+        localStorage.setItem('TASK_SCHEDULER_DATA', JSON.stringify(dataToSave));
+    }
+
+    function saveHistory() {
+        historyStack.push(JSON.stringify(tasksMap));
+        if (historyStack.length > 50) historyStack.shift();
+    }
+
+    function initMockData() {
+        tasksMap = {};
+    }
+
+    function getCloudConfig() {
+        const cfg = localStorage.getItem('GH_CLOUD_CONFIG');
+        return cfg ? JSON.parse(cfg) : DEFAULT_CLOUD_CONFIG;
+    }
+
+    const weekdayCN = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+
+    function renderTable() {
+        const headerRow = document.getElementById('headerRow');
+        const tableBody = document.getElementById('tableBody');
+        
+        while (headerRow.children.length > 1) headerRow.removeChild(headerRow.lastChild);
+        tableBody.innerHTML = '';
+
+        const weekDates = [];
+        const todayKey = formatDateKey(new Date());
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(currentStartDate);
+            d.setDate(d.getDate() + i);
+            weekDates.push(d);
+        }
+
+        weekDates.forEach((date, index) => {
+            const th = document.createElement('th');
+            const dateKey = formatDateKey(date);
+            const isToday = dateKey === todayKey;
+
+            // 💡 针对当前日期列的表头运用高亮样式类名
+            if (isToday) {
+                th.className = 'today-column-highlight';
+            }
+
+            th.innerHTML = `
+                <div class="date-header ${isToday ? 'is-today' : ''}">
+                    <div class="date-str">${date.getMonth()+1}月${date.getDate()}日</div>
+                    <div class="week-str">${weekdayCN[date.getDay()]}</div>
+                </div>
+            `;
+            
+            if (index === 0) {
+                const prevBtn = document.createElement('span');
+                prevBtn.className = 'nav-btn nav-prev';
+                prevBtn.innerHTML = '❮';
+                prevBtn.onclick = () => navigateWeek(-7);
+                th.appendChild(prevBtn);
+            }
+            if (index === 6) {
+                const nextBtn = document.createElement('span');
+                nextBtn.className = 'nav-btn nav-next';
+                nextBtn.innerHTML = '❯';
+                nextBtn.onclick = () => navigateWeek(7);
+                th.appendChild(nextBtn);
+            }
+            headerRow.appendChild(th);
+        });
+
+        const rowNames = ["任务一", "任务二", "任务三", "任务四", "任务五"];
+        for (let r = 0; r < ROW_COUNT; r++) {
+            const rowId = `row-${r+1}`;
+            const tr = document.createElement('tr');
+            
+            const tdHeader = document.createElement('td');
+            tdHeader.innerHTML = `<div class="row-title">${rowNames[r]}</div>`;
+            tr.appendChild(tdHeader);
+
+            weekDates.forEach(date => {
+                const dateKey = formatDateKey(date);
+                const isToday = dateKey === todayKey;
+                const td = document.createElement('td');
+                
+                // 💡 核心视觉回归：针对当前日期列下所有的单元格运用高亮样式类名
+                td.className = 'task-cell' + (isToday ? ' today-column-highlight' : '');
+                td.dataset.date = dateKey;
+                td.dataset.row = rowId;
+
+                td.addEventListener('dragover', onDragOver);
+                td.addEventListener('dragleave', onDragLeave);
+                td.addEventListener('drop', onDrop);
+
+                if (tasksMap[dateKey] && tasksMap[dateKey][rowId]) {
+                    const taskData = tasksMap[dateKey][rowId];
+                    const card = createTaskCard(taskData, dateKey, rowId);
+                    td.appendChild(card);
+                } else {
+                    td.ondblclick = () => openEditModal(dateKey, rowId, true);
+                }
+
+                tr.appendChild(td);
+            });
+
+            tableBody.appendChild(tr);
+        }
+    }
+
+    function createTaskCard(data, dateKey, rowId) {
+        const card = document.createElement('div');
+        card.className = `task-card ${data.status}`;
+        card.draggable = true;
+        card.dataset.date = dateKey;
+        card.dataset.row = rowId;
+
+        const statusText = data.status === 'completed' ? '已完成' : '未完成';
+
+        card.innerHTML = `
+            <div class="status-badge">${statusText}</div>
+            <div class="task-field">QQ:${data.qq || ''}</div>
+            <div class="task-field">账号：${data.account || ''}</div>
+            <div class="task-field">密码：${data.pwd || ''}</div>
+            <div class="task-field">区服：${data.server || ''}</div>
+            <div class="task-field">要求：${data.req || ''}</div>
+        `;
+
+        card.addEventListener('dragstart', onDragStart);
+        card.addEventListener('dragend', onDragEnd);
+
+        card.addEventListener('dblclick', (e) => {
+            e.stopPropagation(); 
+            openEditModal(dateKey, rowId, false);
+        });
+
+        let pressTimer;
+        let isDraggingDetected = false;
+
+        card.addEventListener('mousedown', (e) => {
+            if(e.button !== 0) return; 
+            isDraggingDetected = false;
+            pressTimer = setTimeout(() => {
+                if (!isDraggingDetected) { 
+                    toggleTaskStatus(dateKey, rowId);
+                }
+                pressTimer = null;
+            }, 600); 
+        });
+
+        card.addEventListener('dragstart', () => {
+            isDraggingDetected = true;
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        });
+
+        card.addEventListener('mouseup', () => clearTimeout(pressTimer));
+        card.addEventListener('mouseleave', () => clearTimeout(pressTimer));
+
+        return card;
+    }
+
+    function navigateWeek(days) {
+        currentStartDate.setDate(currentStartDate.getDate() + days);
+        renderTable();
+        saveData();
+    }
+
+    window.addEventListener('wheel', (e) => {
+        if (document.querySelector('.modal-overlay[style*="flex"]')) return;
+        e.preventDefault();
+        if (e.deltaY > 0 || e.deltaX > 0) {
+            navigateWeek(1); 
+        } else {
+            navigateWeek(-1); 
+        }
+    }, { passive: false });
+
+    function toggleTaskStatus(dateKey, rowId) {
+        if (!tasksMap[dateKey] || !tasksMap[dateKey][rowId]) return;
+        saveHistory();
+        const task = tasksMap[dateKey][rowId];
+        task.status = task.status === 'completed' ? 'incomplete' : 'completed';
+        renderTable();
+        saveData();
+    }
+
+    let draggedCardInfo = null;
+
+    function onDragStart(e) {
+        draggedCardInfo = {
+            sourceDate: this.dataset.date,
+            sourceRow: this.dataset.row
+        };
+        this.style.opacity = '0.5';
+    }
+
+    function onDragEnd() {
+        this.style.opacity = '1';
+        document.querySelectorAll('.task-cell').forEach(c => c.classList.remove('drag-over'));
+    }
+
+    function onDragOver(e) { e.preventDefault(); this.classList.add('drag-over'); }
+    document.addEventListener('dragleave', (e) => { if(e.target.classList.contains('task-cell')) e.target.classList.remove('drag-over')});
+    function onDragLeave() { this.classList.remove('drag-over'); }
+
+    function onDrop(e) {
+        e.preventDefault();
+        this.classList.remove('drag-over');
+        if (!draggedCardInfo) return;
+
+        const targetDate = this.dataset.date;
+        const targetRow = this.dataset.row;
+
+        if (draggedCardInfo.sourceDate === targetDate && draggedCardInfo.sourceRow === targetRow) return;
+
+        saveHistory();
+
+        const movingData = tasksMap[draggedCardInfo.sourceDate][draggedCardInfo.sourceRow];
+
+        delete tasksMap[draggedCardInfo.sourceDate][draggedCardInfo.sourceRow];
+        if (Object.keys(tasksMap[draggedCardInfo.sourceDate]).length === 0) {
+            delete tasksMap[draggedCardInfo.sourceDate];
+        }
+
+        if (!tasksMap[targetDate]) tasksMap[targetDate] = {};
+        tasksMap[targetDate][targetRow] = movingData;
+
+        draggedCardInfo = null;
+        renderTable();
+        saveData();
+    }
+
+    const intelInput = document.getElementById('m-intel');
+    intelInput.addEventListener('input', function() {
+        const text = this.value;
+        if (!text.trim()) return;
+
+        const qqMatch = text.match(/(?:QQ|qq)[:：\s]*([a-zA-Z0-9_\-]+)/);
+        const accountMatch = text.match(/(?:账号|帳號|帐号|Account|acc)[:：\s]*([a-zA-Z0-9_\-]+)/i);
+        const pwdMatch = text.match(/(?:密码|密碼|pwd|Password)[:：\s]*([a-zA-Z0-9_\-]+)/i);
+        const serverMatch = text.match(/(?:区服|服务器|區服|服)[:：\s]*([^\s\n，,、]+)/);
+        const reqMatch = text.match(/(?:要求|备注|備註|内容)[:：\s]*([^\n]+)/);
+
+        if(qqMatch) document.getElementById('m-qq').value = qqMatch[1];
+        if(accountMatch) document.getElementById('m-account').value = accountMatch[1];
+        if(pwdMatch) document.getElementById('m-pwd').value = pwdMatch[1];
+        if(serverMatch) document.getElementById('m-server').value = serverMatch[1];
+        if(reqMatch) document.getElementById('m-req').value = reqMatch[1];
+    });
+
+    let activeEditConfig = null;
+
+    function openEditModal(dateKey, rowId, isCreate = false) {
+        activeEditConfig = { dateKey, rowId, isCreate };
+        const modal = document.getElementById('editModal');
+        const btnDel = document.getElementById('btnDel');
+        document.getElementById('m-intel').value = '';
+
+        if (isCreate) {
+            btnDel.style.display = 'none';
+            document.getElementById('m-qq').value = '';
+            document.getElementById('m-account').value = '';
+            document.getElementById('m-pwd').value = '';
+            document.getElementById('m-server').value = '';
+            document.getElementById('m-req').value = '';
+        } else {
+            btnDel.style.display = 'block';
+            const data = tasksMap[dateKey][rowId];
+            document.getElementById('m-qq').value = data.qq || '';
+            document.getElementById('m-account').value = data.account || '';
+            document.getElementById('m-pwd').value = data.pwd || '';
+            document.getElementById('m-server').value = data.server || '';
+            document.getElementById('m-req').value = data.req || '';
+        }
+        modal.style.display = 'flex';
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).style.display = 'none';
+    }
+    document.getElementById('btnCancel').onclick = () => closeModal('editModal');
+
+    document.getElementById('btnSave').onclick = () => {
+        if (!activeEditConfig) return;
+        saveHistory();
+        const { dateKey, rowId, isCreate } = activeEditConfig;
+        if (!tasksMap[dateKey]) tasksMap[dateKey] = {};
+        let status = isCreate ? 'incomplete' : (tasksMap[dateKey][rowId] ? tasksMap[dateKey][rowId].status : 'incomplete');
+
+        tasksMap[dateKey][rowId] = {
+            status: status,
+            qq: document.getElementById('m-qq').value,
+            account: document.getElementById('m-account').value,
+            pwd: document.getElementById('m-pwd').value,
+            server: document.getElementById('m-server').value,
+            req: document.getElementById('m-req').value
+        };
+        closeModal('editModal');
+        renderTable();
+        saveData();
+    };
+
+    document.getElementById('btnDel').onclick = () => {
+        if (!activeEditConfig) return;
+        saveHistory();
+        const { dateKey, rowId } = activeEditConfig;
+        if (tasksMap[dateKey] && tasksMap[dateKey][rowId]) {
+            delete tasksMap[dateKey][rowId];
+            if (Object.keys(tasksMap[dateKey]).length === 0) delete tasksMap[dateKey];
+        }
+        closeModal('editModal');
+        renderTable();
+        saveData();
+    };
+
+    window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            if (historyStack.length > 0) {
+                e.preventDefault();
+                tasksMap = JSON.parse(historyStack.pop());
+                renderTable();
+                saveData();
+                showToast("已撤销上一步操作");
+            }
+        }
+    });
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.style.opacity = '1';
+        setTimeout(() => t.style.opacity = '0', 2000);
+    }
+
+    document.getElementById('btnConfigCloud').onclick = () => {
+        const cfg = getCloudConfig();
+        document.getElementById('c-token').value = cfg.token || '';
+        document.getElementById('c-owner').value = cfg.owner || '';
+        document.getElementById('c-repo').value = cfg.repo || '';
+        document.getElementById('c-branch').value = cfg.branch || 'main';
+        document.getElementById('configModal').style.display = 'flex';
+    };
+
+    document.getElementById('btnSaveConfig').onclick = () => {
+        const config = {
+            token: document.getElementById('c-token').value.trim(),
+            owner: document.getElementById('c-owner').value.trim(),
+            repo: document.getElementById('c-repo').value.trim(),
+            branch: document.getElementById('c-branch').value.trim()
+        };
+        if(!config.token || !config.owner || !config.repo) {
+            alert("配置信息不完整，无法保存！");
+            return;
+        }
+        localStorage.setItem('GH_CLOUD_CONFIG', JSON.stringify(config));
+        closeModal('configModal');
+        showToast("⚙️ 云端自定义配置保存成功！");
+    };
+
+    // --- 💡 优化同步逻辑（解决 sha 缺失问题） ---
+    document.getElementById('btnCloudPush').onclick = async () => {
+        const cfg = getCloudConfig();
+        if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整注入，请点击凭证配置检查！"); return; }
+
+        const now = new Date();
+        const timestamp = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + "_" + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
+        const newFileName = `task_data_${timestamp}.json`; 
+
+        const btn = document.getElementById('btnCloudPush');
+        btn.innerText = "⚡ 正在同步...";
+        btn.disabled = true;
+
+        const currentDataStr = localStorage.getItem('TASK_SCHEDULER_DATA') || JSON.stringify({ tasksMap: {}, lastViewDate: formatDateKey(new Date()) });
+        const base64Content = btoa(unescape(encodeURIComponent(currentDataStr)));
+
+        try {
+            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}?ref=${cfg.branch}`;
+            
+            let currentSha = null;
+            const checkResponse = await fetch(url, {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${cfg.token}`,
+                    "Accept": "application/vnd.github+json"
+                }
+            });
+
+            if (checkResponse.ok) {
+                const fileInfo = await checkResponse.json();
+                currentSha = fileInfo.sha;
+            }
+
+            const bodyData = {
+                message: `Backup task data: ${newFileName}`,
+                content: base64Content,
+                branch: cfg.branch
+            };
+
+            if (currentSha) {
+                bodyData.sha = currentSha;
+            }
+
+            const uploadUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${newFileName}`;
+            const response = await fetch(uploadUrl, {
+                method: "PUT",
+                headers: {
+                    "Authorization": `Bearer ${cfg.token}`,
+                    "Accept": "application/vnd.github+json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(bodyData)
+            });
+
+            if(response.ok) {
+                showToast(`☁️ 成功在 HTML 同级目录下创建备份：${newFileName}`);
+            } else {
+                const err = await response.json();
+                alert("云端备份失败：" + (err.message || response.statusText));
+            }
+        } catch (e) {
+            alert("连接 GitHub API 发生网络异常：" + e.message);
+        } finally {
+            btn.innerText = "☁️ 同步到云端";
+            btn.disabled = false;
+        }
+    };
+
+    document.getElementById('btnCloudPull').onclick = async () => {
+        const cfg = getCloudConfig();
+        if(!cfg.token || !cfg.owner || !cfg.repo) { alert("云端凭证未完整注入！"); return; }
+
+        const btn = document.getElementById('btnCloudPull');
+        btn.innerText = "⚡ 正在扫描...";
+        btn.disabled = true;
+
+        try {
+            const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/?ref=${cfg.branch}`;
+            const response = await fetch(url, {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${cfg.token}`,
+                    "Accept": "application/vnd.github+json"
+                }
+            });
+
+            if(response.ok) {
+                const files = await response.json();
+                const jsonFiles = files.filter(file => file.name.toLowerCase().endsWith('.json') && file.type === 'file');
+                
+                if(jsonFiles.length === 0) {
+                    alert("云端 HTML 同目录下暂未检测到任何 .json 备份文件，请先执行‘同步到云端’！");
+                    return;
+                }
+
+                const listContainer = document.getElementById('cloudFileList');
+                listContainer.innerHTML = '';
+                selectedCloudFileDownloadUrl = null;
+                document.getElementById('btnConfirmLoadCloud').disabled = true;
+
+                jsonFiles.sort((a, b) => b.name.localeCompare(a.name));
+
+                jsonFiles.forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'file-item';
+                    const sizeKB = (file.size / 1024).toFixed(2);
+                    item.innerHTML = `<span>📄 ${file.name}</span><span style="color:#999;">${sizeKB} KB</span>`;
+                    
+                    item.onclick = () => {
+                        document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+                        item.classList.add('selected');
+                        selectedCloudFileDownloadUrl = file.download_url;
+                        document.getElementById('btnConfirmLoadCloud').disabled = false;
+                    };
+                    listContainer.appendChild(item);
+                });
+
+                document.getElementById('cloudFilesModal').style.display = 'flex';
+            } else {
+                alert("拉取云端文件列表失败，请确认凭证、仓库名与分支是否输入正确。");
+            }
+        } catch (e) {
+            alert("拉取列表时发生网络异常：" + e.message);
+        } finally {
+            btn.innerText = "📥 从云端选择下载";
+            btn.disabled = false;
+        }
+    };
+
+    document.getElementById('btnConfirmLoadCloud').onclick = async () => {
+        if(!selectedCloudFileDownloadUrl) return;
+        if(!confirm("确定要拉取选中的云端数据吗？这将会完整覆盖您当前的本地页面状态！")) return;
+
+        try {
+            const response = await fetch(selectedCloudFileDownloadUrl);
+            if(response.ok) {
+                const parsed = await response.json();
+                
+                saveHistory(); 
+                if (parsed.tasksMap) tasksMap = parsed.tasksMap;
+                if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
+
+                saveData();
+                renderTable();
+                closeModal('cloudFilesModal');
+                showToast("📥 云端特定版本日程数据已成功导入并刷新！");
+            } else {
+                alert("下载具体数据内容时失败。");
+            }
+        } catch(e) {
+            alert("拉取云端数据发生异常：" + e.message);
+        }
+    };
+
+    window.onload = () => {
+        loadData();
+        renderTable();
+    };
+</script>
+
+</body>
+</html>
