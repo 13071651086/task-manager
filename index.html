@@ -43,6 +43,7 @@
             pointer-events: none !important; 
         }
 
+        /* 💡 粒子特效支持容器：默认 opacity: 0 彻底防止动画前暴露表格 */
         .container {
             max-width: 100%;
             background: #fff;
@@ -50,6 +51,25 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             overflow-x: auto;
             margin-bottom: 85px; 
+            opacity: 0; 
+            transition: opacity 0.4s ease-in-out;
+        }
+
+        /* 粒子绘制完成后调用的显形类 */
+        .container.visible {
+            opacity: 1 !important;
+        }
+
+        /* 全屏粒子 Canvas 层 */
+        #particleCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 9999;
+            display: none;
         }
 
         table {
@@ -404,7 +424,10 @@
 </head>
 <body>
 
-<div class="container">
+<!-- 💡 全屏粒子渲染画板 -->
+<canvas id="particleCanvas"></canvas>
+
+<div class="container" id="mainContainer">
     <table id="taskTable">
         <thead>
             <tr id="headerRow">
@@ -582,14 +605,16 @@
                     if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
                     
                     closeModal('errorRetryModal'); // 读取成功，关闭错误弹窗
-                    renderTable();
+                    
+                    // 💥 触发完全无暴顶/极具吸引力的粒子汇聚视觉特效！
+                    renderTableWithParticleEffect();
                     showToast("🔄 成功读取云端核心默认数据源");
                 }
             } else {
                 // 如果是仓库里确实还没这个文件(例如首次使用创建)，状态码是 404，属于正常允许情况
                 if (response.status === 404) {
                     closeModal('errorRetryModal');
-                    renderTable();
+                    renderTableWithParticleEffect();
                     showToast("🆕 检测到新库，将在下次操作变动时自动创建 task_data.json");
                 } else {
                     // 其他如 401 Unauthorized 等错误引发申请弹窗
@@ -766,6 +791,116 @@
         }
     }
 
+    /* -------------------------------------------------------------
+       ✨ 粒子特效无缝汇聚引擎 (解决了暴顶展示完整表格的 Bug)
+    ------------------------------------------------------------- */
+    function renderTableWithParticleEffect() {
+        const container = document.getElementById('mainContainer');
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 1. 保证表格在后台渲染出元素 DOM 并拿到准确坐标 (但因 CSS 依然隐藏，用户视觉不可见)
+        container.classList.remove('visible');
+        renderTable();
+
+        // 2. 准备 Canvas 视口画布
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        canvas.style.display = 'block';
+
+        const particles = [];
+
+        // 3. 收集视口中的目标坐标
+        const elementsToAnimate = document.querySelectorAll('.task-card, td.task-cell, th');
+        elementsToAnimate.forEach(el => {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                const isCard = el.classList.contains('task-card');
+                const isCompleted = el.classList.contains('completed');
+                const isIncomplete = el.classList.contains('incomplete');
+
+                let color = '#2e7d32'; // 默认绿
+                if (isCompleted) color = '#2e7d32';
+                else if (isIncomplete) color = '#757575';
+                else if (isCard) color = '#1976d2';
+                else color = '#999999';
+
+                const densityX = isCard ? 6 : 4;
+                const densityY = isCard ? 6 : 3;
+
+                for (let i = 0; i < densityX; i++) {
+                    for (let j = 0; j < densityY; j++) {
+                        const targetX = rect.left + (rect.width / densityX) * (i + 0.5);
+                        const targetY = rect.top + (rect.height / densityY) * (j + 0.5);
+
+                        // 乱序分散在屏幕四周爆炸边界外
+                        const angle = Math.random() * Math.PI * 2;
+                        const distance = Math.max(window.innerWidth, window.innerHeight) * (0.6 + Math.random() * 0.6);
+                        const startX = targetX + Math.cos(angle) * distance;
+                        const startY = targetY + Math.sin(angle) * distance;
+
+                        particles.push({
+                            x: startX,
+                            y: startY,
+                            startX: startX,
+                            startY: startY,
+                            targetX: targetX,
+                            targetY: targetY,
+                            size: isCard ? (2 + Math.random() * 2.5) : (1.5 + Math.random() * 1.5),
+                            color: color,
+                            alpha: 0.2 + Math.random() * 0.8
+                        });
+                    }
+                }
+            }
+        });
+
+        let startTime = null;
+        const duration = 1200; // 动画时长 1.2s
+
+        function cubicEaseOut(t) {
+            return --t * t * t + 1;
+        }
+
+        function animateParticles(timestamp) {
+            if (!startTime) startTime = timestamp;
+            const progress = Math.min((timestamp - startTime) / duration, 1);
+            const easeProgress = cubicEaseOut(progress);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            particles.forEach(p => {
+                p.x = p.startX + (p.targetX - p.startX) * easeProgress;
+                p.y = p.startY + (p.targetY - p.startY) * easeProgress;
+
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (progress < 0.85) {
+                    ctx.shadowColor = p.color;
+                    ctx.shadowBlur = 6;
+                }
+                ctx.restore();
+            });
+
+            if (progress < 1) {
+                requestAnimationFrame(animateParticles);
+            } else {
+                // 4. 汇聚完成：显示真正的完整表格，隐藏粒子画布
+                container.classList.add('visible');
+                setTimeout(() => {
+                    canvas.style.display = 'none';
+                }, 100);
+            }
+        }
+
+        requestAnimationFrame(animateParticles);
+    }
+
     function createTaskCard(data, dateKey, rowId) {
         const card = document.createElement('div');
         card.className = `task-card ${data.status}`;
@@ -839,6 +974,8 @@
     function navigateWeek(days) {
         currentStartDate.setDate(currentStartDate.getDate() + days);
         renderTable();
+        // 周切换时表格显形保持正常
+        document.getElementById('mainContainer').classList.add('visible');
     }
 
     window.addEventListener('wheel', (e) => {
@@ -856,6 +993,7 @@
         const task = tasksMap[dateKey][rowId];
         task.status = task.status === 'completed' ? 'incomplete' : 'completed';
         renderTable();
+        document.getElementById('mainContainer').classList.add('visible');
         saveData();
     }
 
@@ -892,6 +1030,7 @@
 
         draggedCardInfo = null;
         renderTable();
+        document.getElementById('mainContainer').classList.add('visible');
         saveData();
     }
 
@@ -911,6 +1050,7 @@
         }
         draggedCardInfo = null;
         renderTable();
+        document.getElementById('mainContainer').classList.add('visible');
         saveData();
         showToast("卡片已拖拽删除并同步默认数据源");
     });
@@ -979,7 +1119,10 @@
             wish: document.getElementById('m-wish').value,
             note: document.getElementById('m-note').value
         };
-        closeEditModal(); renderTable(); saveData();
+        closeEditModal(); 
+        renderTable(); 
+        document.getElementById('mainContainer').classList.add('visible');
+        saveData();
     };
 
     document.getElementById('btnDel').onclick = () => {
@@ -990,7 +1133,10 @@
             delete tasksMap[dateKey][rowId];
             if (Object.keys(tasksMap[dateKey]).length === 0) delete tasksMap[dateKey];
         }
-        closeEditModal(); renderTable(); saveData();
+        closeEditModal(); 
+        renderTable(); 
+        document.getElementById('mainContainer').classList.add('visible');
+        saveData();
     };
 
     document.getElementById('btnUndoAction').onclick = executeUndo;
@@ -1028,7 +1174,7 @@
                     if (parsed.tasksMap) tasksMap = parsed.tasksMap;
                     if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
                     
-                    renderTable();
+                    renderTableWithParticleEffect();
                     saveData(); 
                     showToast('📥 本地 JSON 导入成功并已强制更新云端默认数据源！');
                 } else { alert('导入失败：数据结构不符。'); }
@@ -1183,8 +1329,10 @@
                 if (parsed.tasksMap) tasksMap = parsed.tasksMap;
                 if (parsed.lastViewDate) currentStartDate = new Date(parsed.lastViewDate);
 
-                renderTable();
                 closeModal('cloudFilesModal');
+                
+                // 💥 载入历史快照时触发无暴顶粒子汇聚
+                renderTableWithParticleEffect();
 
                 await autoPushToDefaultCloudFile(); 
 
